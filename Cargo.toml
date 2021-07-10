@@ -1,0 +1,32 @@
+[package]
+name = "ttfb"
+description = """
+Library + CLI-Tool to measure the TTFB (time to first byte) of HTTP requests.
+Additionally, this crate measures the times of DNS lookup, TCP connect and
+TLS handshake.
+"""
+version = "1.1.0"
+edition = "2018"
+keywords = ["ttfb", "http", "timings"]
+categories = ["network-programming"]
+readme = "README.md"
+license = "MIT"
+homepage = "https://github.com/phip1611/ttfb"
+repository = "https://github.com/phip1611/ttfb"
+documentation = "https://docs.rs/ttfb"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# DNS over systems default DNS resolver
+trust-dns-resolver = { version = "0.20", features = ["dns-over-rustls"] }
+# TLS handshake
+native-tls = "0.2"
+# automatic Display impl for enums
+derive_more = { version = "0.99", default-features = false, features = ["display"] }
+# nice abstraction of URL
+url = "2.2"
+regex = "1.5"
+
+# used for the binary, not the lib
+crossterm = "0.20"
