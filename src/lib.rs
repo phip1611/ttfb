@@ -32,7 +32,6 @@ SOFTWARE.
 //! ## Cross Platform
 //! CLI + lib work on Linux, MacOS, and Windows.
 
-
 use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{IpAddr, TcpStream};
 use std::str::FromStr;
@@ -82,7 +81,7 @@ pub fn ttfb(input: String) -> Result<TtfbOutcome, TtfbError> {
 
     let (addr, dns_duration) = resolve_dns_if_necessary(&url)?;
     let port = url.port_or_known_default().unwrap();
-    let (tcp, tcp_connect_duration) = tcp_connect(addr, port);
+    let (tcp, tcp_connect_duration) = tcp_connect(addr, port)?;
     // Does TLS handshake if necessary: returns regular TCP stream if regular HTTP is used.
     // We can write to the "tcp" trait object whatever content we want to. The underlying
     // implementation will either send plain text or encrypt it for TLS.
@@ -103,12 +102,14 @@ pub fn ttfb(input: String) -> Result<TtfbOutcome, TtfbError> {
 }
 
 /// Initializes the TCP connection to the IP address. Measures the duration.
-fn tcp_connect(addr: IpAddr, port: u16) -> (TcpStream, Duration) {
+fn tcp_connect(addr: IpAddr, port: u16) -> Result<(TcpStream, Duration), TtfbError> {
     let addr_w_port = (addr, port);
     let now = Instant::now();
-    let tcp = TcpStream::connect(addr_w_port).unwrap();
+    let mut tcp = TcpStream::connect(addr_w_port).map_err(|err| TtfbError::CantConnectTcp(err))?;
+    tcp.flush()
+        .map_err(|err| TtfbError::OtherStreamError(err))?;
     let tcp_connect_duration = now.elapsed();
-    (tcp, tcp_connect_duration)
+    Ok((tcp, tcp_connect_duration))
 }
 
 /// If the scheme is "https", this replaces the TCP-Stream with a TLS<TCP>-stream.
@@ -120,12 +121,15 @@ fn tls_handshake_if_necessary(
 ) -> Result<(Box<dyn IoReadAndWrite>, Option<Duration>), TtfbError> {
     if url.scheme() == "https" {
         assert_https_requires_domain_name(&url)?;
-        let tls = TlsConnector::new().unwrap();
+        let tls = TlsConnector::new().map_err(|err| TtfbError::CantConnectTls(err))?;
         let now = Instant::now();
         // hostname not used for DNS, only for certificate validation
-        let stream = tls
+        let mut stream = tls
             .connect(url.host_str().unwrap_or(""), tcp)
-            .map_err(|err| TtfbError::CantConnectTls(err))?;
+            .map_err(|err| TtfbError::CantVerifyTls(err))?;
+        stream
+            .flush()
+            .map_err(|err| TtfbError::OtherStreamError(err))?;
         let tls_handshake_duration = now.elapsed();
         Ok((Box::new(stream), Some(tls_handshake_duration)))
     } else {
@@ -134,6 +138,7 @@ fn tls_handshake_if_necessary(
 }
 
 /// Executes the HTTP/1.1 GET-Request on the given socket. This works with TCP or TLS<TCP>.
+/// Afterwards, it waits for the first byte and measures all the times.
 fn execute_http_get(
     tcp: &mut Box<dyn IoReadAndWrite>,
     url: &Url,
@@ -141,16 +146,16 @@ fn execute_http_get(
     let header = build_http11_header(url);
     let now = Instant::now();
     tcp.write_all(header.as_bytes())
-        .map_err(|_| TtfbError::CantConnectHttp)?;
+        .map_err(|err| TtfbError::CantConnectHttp(err))?;
+    tcp.flush()
+        .map_err(|err| TtfbError::OtherStreamError(err))?;
     let get_request_send_duration = now.elapsed();
     let mut one_byte_buf = [0_u8];
     let now = Instant::now();
     tcp.read_exact(&mut one_byte_buf)
-        .map_err(|_| TtfbError::CantConnectHttp)?;
+        .map_err(|err| TtfbError::CantConnectHttp(err))?;
     let http_ttfb_duration = now.elapsed();
-    // 512 KiB should be enough
-    let mut content = Vec::with_capacity(0x80000);
-    content.push(one_byte_buf[0]);
+
     // todo can lead to error, not every server responds with EOF
     // need to parse the request header and get the length from that
     /*tcp.read_to_end(&mut content)
@@ -364,5 +369,15 @@ mod tests {
         resolve_dns_if_necessary(&url3).expect("must be valid");
         resolve_dns_if_necessary(&url4).expect("must be valid");
         resolve_dns_if_necessary(&url5).expect("must be valid");
+    }
+
+    #[test]
+    fn test_single_run() {
+        let r1 = ttfb("http://phip1611.de".to_string()).unwrap();
+        assert!(r1.dns_duration_rel().is_some());
+        assert!(r1.tls_handshake_duration_rel().is_none());
+        let r1 = ttfb("https://phip1611.de".to_string()).unwrap();
+        assert!(r1.dns_duration_rel().is_some());
+        assert!(r1.tls_handshake_duration_rel().is_some());
     }
 }

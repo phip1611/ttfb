@@ -27,6 +27,7 @@ use native_tls::HandshakeError;
 use std::error::Error;
 use std::net::TcpStream;
 use trust_dns_resolver::error::ResolveError;
+use std::io;
 
 #[derive(Debug, Display)]
 pub enum ResolveDnsError {
@@ -36,7 +37,14 @@ pub enum ResolveDnsError {
     Other(ResolveError),
 }
 
-impl Error for ResolveDnsError {}
+impl Error for ResolveDnsError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            ResolveDnsError::Other(err) => Some(err),
+            ResolveDnsError::NoResults => None,
+        }
+    }
+}
 
 #[derive(Debug, Display)]
 pub enum InvalidUrlError {
@@ -63,10 +71,16 @@ pub enum TtfbError {
     InvalidUrl(InvalidUrlError),
     #[display(fmt = "Can't resolve DNS! {}", _0)]
     CantResolveDns(ResolveDnsError),
+    #[display(fmt = "Can't establish TCP-Connection! {}", _0)]
+    CantConnectTcp(io::Error),
     #[display(fmt = "Can't establish TLS-Connection! {}", _0)]
-    CantConnectTls(HandshakeError<TcpStream>),
-    #[display(fmt = "Can't establish HTTP/1.1-Connection!")]
-    CantConnectHttp,
+    CantConnectTls(native_tls::Error),
+    #[display(fmt = "Can't verify TLS-Connection! {}", _0)]
+    CantVerifyTls(HandshakeError<TcpStream>),
+    #[display(fmt = "Can't establish HTTP/1.1-Connection! {}", _0)]
+    CantConnectHttp(io::Error),
+    #[display(fmt = "There was a problem with the stream: {}", _0)]
+    OtherStreamError(io::Error),
 }
 
 impl Error for TtfbError {
@@ -75,7 +89,10 @@ impl Error for TtfbError {
             TtfbError::InvalidUrl(err) => Some(err),
             TtfbError::CantResolveDns(err) => Some(err),
             TtfbError::CantConnectTls(err) => Some(err),
-            _ => None,
+            TtfbError::CantConnectTcp(err) => Some(err),
+            TtfbError::OtherStreamError(err) => Some(err),
+            TtfbError::CantVerifyTls(err) => Some(err),
+            TtfbError::CantConnectHttp(err) => Some(err),
         }
     }
 }
