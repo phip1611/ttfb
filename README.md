@@ -33,7 +33,7 @@ The library exposes the function `ttfb(url: String)`. The string can be for exam
 ## Example Output
 If you installed the CLI and invoke it like `$ ttfb https://phip1611.dev`, the output will look like:
 ```text
-TTFB for https://phip1611.de (by ttfb@v1.0.1)
+TTFB for https://phip1611.de (by ttfb@v1.1.1)
 PROPERTY        REL TIME (ms)   ABS TIME (ms)
 DNS Lookup    :         0.755           0.755  (probably cached)
 TCP connect   :        35.484          36.239

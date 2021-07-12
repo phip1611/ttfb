@@ -371,6 +371,8 @@ mod tests {
         resolve_dns_if_necessary(&url5).expect("must be valid");
     }
 
+    // we ignore this test, because it relies on the given domain being available
+    #[ignore]
     #[test]
     fn test_single_run() {
         let r1 = ttfb("http://phip1611.de".to_string()).unwrap();
