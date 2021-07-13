@@ -1,3 +1,6 @@
+# v1.1.2 (2021-07-13)
+- Typo in README
+
 # v1.1.1 (2021-07-12)
 - better error handling 
 - call flush to make sure all the streams are actually committed
