@@ -31,7 +31,7 @@ The library exposes the function `ttfb(url: String)`. The string can be for exam
 - `12.34.56.78` (defaults to `http://`)
 
 ## Example Output
-If you installed the CLI and invoke it like `$ ttfb https://phip1611.dev`, the output will look like:
+If you installed the CLI and invoke it like `$ ttfb https://phip1611.de`, the output will look like:
 ```text
 TTFB for https://phip1611.de (by ttfb@v1.1.1)
 PROPERTY        REL TIME (ms)   ABS TIME (ms)
