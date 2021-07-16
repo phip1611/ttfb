@@ -71,10 +71,15 @@ trait TcpWithMaybeTlsStream: IoWrite + IoRead {}
 ///   - `http://12.34.56.78/foobar`
 ///   - `12.34.56.78/foobar` (defaults to `http://`)
 ///   - `12.34.56.78` (defaults to `http://`)
+/// - `allow_insecure_certificates`: if illegal certificates (untrusted, expired) should be accepted
+///                                  when https is used. Similar to `-k/--insecure` in `curl`.
 ///
 /// ## Return value
 /// [`TtfbOutcome`] or [`TtfbError`].
-pub fn ttfb(input: String) -> Result<TtfbOutcome, TtfbError> {
+pub fn ttfb(input: String, allow_insecure_certificates: bool) -> Result<TtfbOutcome, TtfbError> {
+    if input.is_empty() {
+        return Err(TtfbError::InvalidUrl(InvalidUrlError::MissingInput));
+    }
     let input = prepend_default_scheme_if_necessary(input);
     let url = parse_input_as_url(&input)?;
     assert_scheme_is_allowed(&url)?;
@@ -85,7 +90,7 @@ pub fn ttfb(input: String) -> Result<TtfbOutcome, TtfbError> {
     // Does TLS handshake if necessary: returns regular TCP stream if regular HTTP is used.
     // We can write to the "tcp" trait object whatever content we want to. The underlying
     // implementation will either send plain text or encrypt it for TLS.
-    let (mut tcp, tls_handshake_duration) = tls_handshake_if_necessary(tcp, &url)?;
+    let (mut tcp, tls_handshake_duration) = tls_handshake_if_necessary(tcp, &url, allow_insecure_certificates)?;
     let (http_get_send_duration, http_ttfb_duration) = execute_http_get(&mut tcp, &url)?;
 
     Ok(TtfbOutcome::new(
@@ -118,10 +123,15 @@ fn tcp_connect(addr: IpAddr, port: u16) -> Result<(TcpStream, Duration), TtfbErr
 fn tls_handshake_if_necessary(
     tcp: TcpStream,
     url: &Url,
+    allow_insecure_certificates: bool,
 ) -> Result<(Box<dyn IoReadAndWrite>, Option<Duration>), TtfbError> {
     if url.scheme() == "https" {
         assert_https_requires_domain_name(&url)?;
-        let tls = TlsConnector::new().map_err(|err| TtfbError::CantConnectTls(err))?;
+        let tls = TlsConnector::builder()
+            .danger_accept_invalid_hostnames(allow_insecure_certificates)
+            .danger_accept_invalid_certs(allow_insecure_certificates)
+            .build()
+            .map_err(|err| TtfbError::CantConnectTls(err))?;
         let now = Instant::now();
         // hostname not used for DNS, only for certificate validation
         let mut stream = tls
@@ -375,11 +385,16 @@ mod tests {
     #[ignore]
     #[test]
     fn test_single_run() {
-        let r1 = ttfb("http://phip1611.de".to_string()).unwrap();
-        assert!(r1.dns_duration_rel().is_some());
-        assert!(r1.tls_handshake_duration_rel().is_none());
-        let r1 = ttfb("https://phip1611.de".to_string()).unwrap();
-        assert!(r1.dns_duration_rel().is_some());
-        assert!(r1.tls_handshake_duration_rel().is_some());
+        let r = ttfb("http://phip1611.de".to_string(), false).unwrap();
+        assert!(r.dns_duration_rel().is_some());
+        assert!(r.tls_handshake_duration_rel().is_none());
+        let r = ttfb("https://phip1611.de".to_string(), false).unwrap();
+        assert!(r.dns_duration_rel().is_some());
+        assert!(r.tls_handshake_duration_rel().is_some());
+        let r = ttfb("https://expired.badssl.com".to_string(), false);
+        assert!(r.is_err());
+        let r = ttfb("https://expired.badssl.com".to_string(), true).unwrap();
+        assert!(r.dns_duration_rel().is_some());
+        assert!(r.tls_handshake_duration_rel().is_some());
     }
 }

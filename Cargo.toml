@@ -5,7 +5,7 @@ Library + CLI-Tool to measure the TTFB (time to first byte) of HTTP requests.
 Additionally, this crate measures the times of DNS lookup, TCP connect and
 TLS handshake.
 """
-version = "1.1.2"
+version = "1.2.0"
 edition = "2018"
 keywords = ["ttfb", "http", "timings"]
 categories = ["network-programming"]
@@ -27,6 +27,7 @@ derive_more = { version = "0.99", default-features = false, features = ["display
 # nice abstraction of URL
 url = "2.2"
 regex = "1.5"
-
+# CLI args parsing
+clap = "3.0.0-beta.2"
 # used for the binary, not the lib
 crossterm = "0.20"

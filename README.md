@@ -19,6 +19,9 @@ CLI + lib work on Linux, MacOS, and Windows.
 Install with `cargo install ttfb`. It takes one argument and passes it to the library. 
 The string you pass here as first argument is the same as for the library function.
 
+Additionally, the CLI takes a `-k/--insecure` option. \
+Example: `$ ttfb -k https://expired.badssl.com`
+
 ## Usage Library
 The library exposes the function `ttfb(url: String)`. The string can be for example:
 - `phip1611.de` (defaults to `http://`)

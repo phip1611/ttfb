@@ -1,3 +1,16 @@
+#v 1.2.0 (2021-07-16)
+- added `-k/--insecure` to CLI
+- added `allow_insecure_certificates` as second parameter to library function
+
+This is breaking but because my library doesn't have much or zero users yet,
+it's okay not to bump the major version.
+
+Example: `$ ttfb -k https://expired.badssl.com`
+
+You can also type `$ ttfb --help` now. 
+
+CLI parsing is backed up by the crate `clap` now.
+
 # v1.1.2 (2021-07-13)
 - Typo in README
 
