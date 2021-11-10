@@ -25,9 +25,9 @@ SOFTWARE.
 use derive_more::Display;
 use native_tls::HandshakeError;
 use std::error::Error;
+use std::io;
 use std::net::TcpStream;
 use trust_dns_resolver::error::ResolveError;
-use std::io;
 
 #[derive(Debug, Display)]
 pub enum ResolveDnsError {

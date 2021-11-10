@@ -90,7 +90,8 @@ pub fn ttfb(input: String, allow_insecure_certificates: bool) -> Result<TtfbOutc
     // Does TLS handshake if necessary: returns regular TCP stream if regular HTTP is used.
     // We can write to the "tcp" trait object whatever content we want to. The underlying
     // implementation will either send plain text or encrypt it for TLS.
-    let (mut tcp, tls_handshake_duration) = tls_handshake_if_necessary(tcp, &url, allow_insecure_certificates)?;
+    let (mut tcp, tls_handshake_duration) =
+        tls_handshake_if_necessary(tcp, &url, allow_insecure_certificates)?;
     let (http_get_send_duration, http_ttfb_duration) = execute_http_get(&mut tcp, &url)?;
 
     Ok(TtfbOutcome::new(

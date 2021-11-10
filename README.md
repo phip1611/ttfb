@@ -45,7 +45,6 @@ HTTP GET Req  :         0.011          72.614
 HTTP Resp TTFB:        76.432         149.046
 ```
 
-## Rust version
+## Rust version / MSRV
 This crate was developed and tested with rustc-nightly 1.55 and rustc-stable 1.53.
-It should work with older versions too, because I don't use special features in the code.
-Maybe the other libraries could block older compilers, I'm not sure.
+The MSRV at least on toolchain x86_64-unknown-linux-gnu is 1.45.2.

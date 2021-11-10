@@ -127,8 +127,7 @@ impl TtfbOutcome {
     /// Getter for [`Self::http_ttfb_duration`] (absolute time from begin).
     /// Calculated by the relative TTFB time + all previous relative times.
     pub fn http_ttfb_duration_abs(&self) -> Duration {
-        self.http_ttfb_duration_rel +
-            self.http_get_send_duration_abs()
+        self.http_ttfb_duration_rel + self.http_get_send_duration_abs()
     }
 
     /*pub fn http_content_download_duration(&self) -> Duration {
