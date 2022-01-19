@@ -118,7 +118,9 @@ impl TtfbOutcome {
     /// Getter for the absolute duration from the beginning to the TCP connect.
     /// Calculated by the relative TCP connect time + DNS relative times.
     pub fn tcp_connect_duration_abs(&self) -> Duration {
-        self.dns_duration_rel.unwrap_or(Duration::from_secs(0)) + self.tcp_connect_duration_rel
+        self.dns_duration_rel
+            .unwrap_or_else(|| Duration::from_secs(0))
+            + self.tcp_connect_duration_rel
     }
     /// Getter for the absolute duration from the beginning to the TLS handshake.
     /// Calculated by the relative TLS handshake time + all previous relative times.

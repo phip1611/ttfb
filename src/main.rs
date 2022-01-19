@@ -112,7 +112,7 @@ fn get_url_from_user() -> ArgMatches {
             Arg::new("HOST")
                 .value_name("HOST")
                 .help("IP or Host/Domain. \"https://\"-prefix must be provided for HTTPS/TLS.")
-                .required(true)
+                .required(true),
         )
         .arg(
             Arg::new("insecure")
@@ -121,7 +121,7 @@ fn get_url_from_user() -> ArgMatches {
                 .short('k')
                 .long("insecure")
                 .help("Ignore invalid certificates (expired, wrong domain name) when TLS is used")
-                .required(false)
+                .required(false),
         );
     // this will exit, if the arguments are not available
     clap.get_matches()
