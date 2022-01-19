@@ -1,6 +1,6 @@
 # TTFB: CLI + Lib to Measure the TTFB of HTTP/1.1 Requests
 
-Similar to the network tab in Google Chrome or Mozilla Firefox, this 
+Similar to the network tab in Google Chrome or Mozilla Firefox, this
 crate helps you find the timings for:
 
 - DNS lookup (if domain is specified, i.e. no IP is given)
@@ -9,14 +9,14 @@ crate helps you find the timings for:
 - Initial GET-Request
 - TTFB (Time To First Byte)
 
-It builds upon the crates [trust-dns-resolver](crates.io/crate/trust-dns-resolver) for modern and secure 
+It builds upon the crates [trust-dns-resolver](crates.io/crate/trust-dns-resolver) for modern and secure
 DNS resolving of domains and [native-tls](crates.io/crate/native-tls) for handling TLS v1.2/1.3.
 
 ## Cross Platform
 CLI + lib work on Linux, MacOS, and Windows.
 
 ## Usage Binary/CLI tool
-Install with `cargo install ttfb`. It takes one argument and passes it to the library. 
+Install with `cargo install ttfb`. It takes one argument and passes it to the library.
 The string you pass here as first argument is the same as for the library function.
 
 Additionally, the CLI takes a `-k/--insecure` option. \
@@ -46,5 +46,4 @@ HTTP Resp TTFB:        76.432         149.046
 ```
 
 ## Rust version / MSRV
-This crate was developed and tested with rustc-nightly 1.55 and rustc-stable 1.53.
-The MSRV at least on toolchain x86_64-unknown-linux-gnu is 1.45.2.
+This crate uses the Rust edition 2021. This means, the MSRV is 1.56.1 stable.
