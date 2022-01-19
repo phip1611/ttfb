@@ -34,7 +34,7 @@ pub enum ResolveDnsError {
     #[display(fmt = "Can't find DNS entry for the given host.")]
     NoResults,
     #[display(fmt = "Couldn't resolve DNS for given host because: {}", _0)]
-    Other(ResolveError),
+    Other(Box<ResolveError>),
 }
 
 impl Error for ResolveDnsError {
