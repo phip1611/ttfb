@@ -22,6 +22,23 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+#![deny(
+    clippy::all,
+    clippy::cargo,
+    clippy::nursery,
+    // clippy::restriction,
+    // clippy::pedantic
+)]
+// now allow a few rules which are denied by the above statement
+// --> they are ridiculous and not necessary
+#![allow(
+    clippy::suboptimal_flops,
+    clippy::redundant_pub_crate,
+    clippy::fallible_impl_from
+)]
+#![deny(missing_debug_implementations)]
+#![deny(rustdoc::all)]
+
 use clap::{Arg, ArgMatches};
 use crossterm::style::{Attribute, SetAttribute};
 use crossterm::ExecutableCommand;
@@ -85,16 +102,16 @@ fn get_url_from_user() -> ArgMatches {
         .version(CRATE_VERSION)
         .about(
             "
-        CLI utility to measure the TTFB (time to first byte) of HTTP requests.
-        Additionally, this crate measures the times of DNS lookup, TCP connect and
-        TLS handshake.
+        CLI utility to measure the TTFB (time to first byte) of HTTP(s) requests.
+        Additionally, this crate measures the relative and absolute times of DNS
+        lookup, TCP connect and TLS handshake.
         ",
         )
         .author("Philipp Schuster <https://github.com/phip1611/ttfb>")
         .arg(
             Arg::new("HOST")
                 .value_name("HOST")
-                .about("IP or Host/Domain. \"https://\"-prefix must be added for TLS.")
+                .help("IP or Host/Domain. \"https://\"-prefix must be provided for HTTPS/TLS.")
                 .required(true)
         )
         .arg(
@@ -103,7 +120,7 @@ fn get_url_from_user() -> ArgMatches {
                 .takes_value(false)
                 .short('k')
                 .long("insecure")
-                .about("Ignores invalid certificates (expired, wrong domain name) when https/TLS is used")
+                .help("Ignore invalid certificates (expired, wrong domain name) when TLS is used")
                 .required(false)
         );
     // this will exit, if the arguments are not available

@@ -50,7 +50,8 @@ pub struct TtfbOutcome {
 }
 
 impl TtfbOutcome {
-    pub fn new(
+    #[allow(clippy::too_many_arguments)]
+    pub const fn new(
         user_input: String,
         ip_addr: IpAddr,
         port: u16,
@@ -61,7 +62,7 @@ impl TtfbOutcome {
         http_ttfb_duration_rel: Duration,
         // http_content_download_duration: Duration,
     ) -> Self {
-        TtfbOutcome {
+        Self {
             user_input,
             ip_addr,
             port,
@@ -73,58 +74,68 @@ impl TtfbOutcome {
             // http_content_download_duration,
         }
     }
+
     /// Getter for [`Self::user_input`].
     pub fn user_input(&self) -> &str {
         &self.user_input
     }
+
     /// Getter for [`Self::ip_addr`] (relative time).
-    pub fn ip_addr(&self) -> IpAddr {
+    pub const fn ip_addr(&self) -> IpAddr {
         self.ip_addr
     }
+
     /// Getter for [`Self::port`] (relative time).
-    pub fn port(&self) -> u16 {
+    pub const fn port(&self) -> u16 {
         self.port
     }
-    /// Getter for [`Self::dns_duration`] (relative time).
-    pub fn dns_duration_rel(&self) -> Option<&Duration> {
+
+    /// Getter for [`Self::dns_duration_rel`] (relative time).
+    pub const fn dns_duration_rel(&self) -> Option<&Duration> {
         self.dns_duration_rel.as_ref()
     }
-    /// Getter for [`Self::tcp_connect_duration`] (relative time).
-    pub fn tcp_connect_duration_rel(&self) -> Duration {
+
+    /// Getter for [`Self::tcp_connect_duration_rel`] (relative time).
+    pub const fn tcp_connect_duration_rel(&self) -> Duration {
         self.tcp_connect_duration_rel
     }
-    /// Getter for [`Self::tls_handshake_duration`] (relative time).
-    pub fn tls_handshake_duration_rel(&self) -> Option<&Duration> {
+
+    /// Getter for [`Self::tls_handshake_duration_rel`] (relative time).
+    pub const fn tls_handshake_duration_rel(&self) -> Option<&Duration> {
         self.tls_handshake_duration_rel.as_ref()
     }
-    /// Getter for [`Self::http_get_send_duration`] (relative time).
-    pub fn http_get_send_duration_rel(&self) -> Duration {
+
+    /// Getter for [`Self::http_get_send_duration_rel`] (relative time).
+    pub const fn http_get_send_duration_rel(&self) -> Duration {
         self.http_get_send_duration_rel
     }
-    /// Getter for [`Self::http_ttfb_duration`] (relative time).
-    pub fn http_ttfb_duration_rel(&self) -> Duration {
+
+    /// Getter for [`Self::http_ttfb_duration_rel`] (relative time).
+    pub const fn http_ttfb_duration_rel(&self) -> Duration {
         self.http_ttfb_duration_rel
     }
 
-    /// Getter for [`Self::tcp_connect_duration`] (absolute time from begin).
+    /// Getter for the absolute duration from the beginning to the TCP connect.
     /// Calculated by the relative TCP connect time + DNS relative times.
     pub fn tcp_connect_duration_abs(&self) -> Duration {
         self.dns_duration_rel.unwrap_or(Duration::from_secs(0)) + self.tcp_connect_duration_rel
     }
-    /// Getter for [`Self::tls_handshake_duration`] (absolute time from begin).
+    /// Getter for the absolute duration from the beginning to the TLS handshake.
     /// Calculated by the relative TLS handshake time + all previous relative times.
     pub fn tls_handshake_duration_abs(&self) -> Option<Duration> {
         self.tls_handshake_duration_rel
             .map(|d| d + self.tcp_connect_duration_abs())
     }
-    /// Getter for [`Self::http_get_send_duration`] (absolute time from begin).
+
+    /// Getter for the absolute duration from the beginning to the HTTP GET send.
     /// Calculated by the relative HTTP GET send time + all previous relative times.
     pub fn http_get_send_duration_abs(&self) -> Duration {
         self.tls_handshake_duration_abs()
-            .unwrap_or(self.tcp_connect_duration_abs())
+            .unwrap_or_else(|| self.tcp_connect_duration_abs())
             + self.http_get_send_duration_rel
     }
-    /// Getter for [`Self::http_ttfb_duration`] (absolute time from begin).
+
+    /// Getter for the absolute duration from the beginning to the TTFB.
     /// Calculated by the relative TTFB time + all previous relative times.
     pub fn http_ttfb_duration_abs(&self) -> Duration {
         self.http_ttfb_duration_rel + self.http_get_send_duration_abs()

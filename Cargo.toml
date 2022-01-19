@@ -5,8 +5,8 @@ Library + CLI-Tool to measure the TTFB (time to first byte) of HTTP requests.
 Additionally, this crate measures the times of DNS lookup, TCP connect and
 TLS handshake.
 """
-version = "1.2.0"
-edition = "2018"
+version = "1.3.0"
+edition = "2021"
 keywords = ["ttfb", "http", "timings"]
 categories = ["network-programming"]
 readme = "README.md"
@@ -18,6 +18,8 @@ documentation = "https://docs.rs/ttfb"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# +++ LIBRARY +++
+
 # DNS over systems default DNS resolver
 trust-dns-resolver = { version = "0.20", features = ["dns-over-rustls"] }
 # TLS handshake
@@ -27,7 +29,11 @@ derive_more = { version = "0.99", default-features = false, features = ["display
 # nice abstraction of URL
 url = "2.2"
 regex = "1.5"
+
+
+# +++ BINARY +++
+
 # CLI args parsing
-clap = "3.0.0-beta.2"
+clap = "3.0"
 # used for the binary, not the lib
-crossterm = "0.20"
+crossterm = "0.22"

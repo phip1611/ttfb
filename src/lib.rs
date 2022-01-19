@@ -32,13 +32,30 @@ SOFTWARE.
 //! ## Cross Platform
 //! CLI + lib work on Linux, MacOS, and Windows.
 
+#![deny(
+    clippy::all,
+    clippy::cargo,
+    clippy::nursery,
+    // clippy::restriction,
+    // clippy::pedantic
+)]
+// now allow a few rules which are denied by the above statement
+// --> they are ridiculous and not necessary
+#![allow(
+    clippy::suboptimal_flops,
+    clippy::redundant_pub_crate,
+    clippy::fallible_impl_from
+)]
+#![deny(missing_debug_implementations)]
+#![deny(rustdoc::all)]
+#![allow(rustdoc::missing_doc_code_examples)]
+
+use native_tls::TlsConnector;
+use regex::Regex;
 use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{IpAddr, TcpStream};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
-
-use native_tls::TlsConnector;
-use regex::Regex;
 use trust_dns_resolver::Resolver as DnsResolver;
 use url::Url;
 
@@ -48,7 +65,7 @@ use crate::outcome::TtfbOutcome;
 pub mod error;
 pub mod outcome;
 
-const CRATE_VERSION: &'static str = env!("CARGO_PKG_VERSION");
+const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 trait IoReadAndWrite: IoWrite + IoRead {}
 
@@ -111,9 +128,8 @@ pub fn ttfb(input: String, allow_insecure_certificates: bool) -> Result<TtfbOutc
 fn tcp_connect(addr: IpAddr, port: u16) -> Result<(TcpStream, Duration), TtfbError> {
     let addr_w_port = (addr, port);
     let now = Instant::now();
-    let mut tcp = TcpStream::connect(addr_w_port).map_err(|err| TtfbError::CantConnectTcp(err))?;
-    tcp.flush()
-        .map_err(|err| TtfbError::OtherStreamError(err))?;
+    let mut tcp = TcpStream::connect(addr_w_port).map_err(TtfbError::CantConnectTcp)?;
+    tcp.flush().map_err(TtfbError::OtherStreamError)?;
     let tcp_connect_duration = now.elapsed();
     Ok((tcp, tcp_connect_duration))
 }
@@ -127,20 +143,18 @@ fn tls_handshake_if_necessary(
     allow_insecure_certificates: bool,
 ) -> Result<(Box<dyn IoReadAndWrite>, Option<Duration>), TtfbError> {
     if url.scheme() == "https" {
-        assert_https_requires_domain_name(&url)?;
+        assert_https_requires_domain_name(url)?;
         let tls = TlsConnector::builder()
             .danger_accept_invalid_hostnames(allow_insecure_certificates)
             .danger_accept_invalid_certs(allow_insecure_certificates)
             .build()
-            .map_err(|err| TtfbError::CantConnectTls(err))?;
+            .map_err(TtfbError::CantConnectTls)?;
         let now = Instant::now();
         // hostname not used for DNS, only for certificate validation
         let mut stream = tls
             .connect(url.host_str().unwrap_or(""), tcp)
-            .map_err(|err| TtfbError::CantVerifyTls(err))?;
-        stream
-            .flush()
-            .map_err(|err| TtfbError::OtherStreamError(err))?;
+            .map_err(TtfbError::CantVerifyTls)?;
+        stream.flush().map_err(TtfbError::OtherStreamError)?;
         let tls_handshake_duration = now.elapsed();
         Ok((Box::new(stream), Some(tls_handshake_duration)))
     } else {
@@ -157,14 +171,13 @@ fn execute_http_get(
     let header = build_http11_header(url);
     let now = Instant::now();
     tcp.write_all(header.as_bytes())
-        .map_err(|err| TtfbError::CantConnectHttp(err))?;
-    tcp.flush()
-        .map_err(|err| TtfbError::OtherStreamError(err))?;
+        .map_err(TtfbError::CantConnectHttp)?;
+    tcp.flush().map_err(TtfbError::OtherStreamError)?;
     let get_request_send_duration = now.elapsed();
     let mut one_byte_buf = [0_u8];
     let now = Instant::now();
     tcp.read_exact(&mut one_byte_buf)
-        .map_err(|err| TtfbError::CantConnectHttp(err))?;
+        .map_err(TtfbError::CantConnectHttp)?;
     let http_ttfb_duration = now.elapsed();
 
     // todo can lead to error, not every server responds with EOF
@@ -200,7 +213,7 @@ fn build_http11_header(url: &Url) -> String {
 
 /// Parses the string input into an [`Url`] object.
 fn parse_input_as_url(input: &str) -> Result<Url, TtfbError> {
-    Url::parse(&input)
+    Url::parse(input)
         .map_err(|e| TtfbError::InvalidUrl(InvalidUrlError::WrongFormat(e.to_string())))
 }
 
@@ -209,17 +222,13 @@ fn parse_input_as_url(input: &str) -> Result<Url, TtfbError> {
 fn prepend_default_scheme_if_necessary(url: String) -> String {
     let regex = Regex::new("^(?P<scheme>.*://)?").unwrap();
     let captures = regex.captures(&url);
-    let url_with_default_scheme = String::from("http://") + &url;
-    if captures.is_none() {
-        url_with_default_scheme
-    } else {
-        let captures = captures.unwrap();
+    if let Some(captures) = captures {
         if captures.name("scheme").is_some() {
-            url
-        } else {
-            url_with_default_scheme
+            return url;
         }
     }
+
+    format!("http://{}", url)
 }
 
 /// If the user specifies the "https" scheme, we must have a domain name and no IP.
@@ -258,7 +267,7 @@ fn resolve_dns_if_necessary(url: &Url) -> Result<(IpAddr, Option<Duration>), Ttf
             .map_err(|e| TtfbError::InvalidUrl(InvalidUrlError::WrongFormat(e.to_string())))?;
         (addr, None)
     } else {
-        resolve_dns(&url).map(|(addr, dur)| (addr, Some(dur)))?
+        resolve_dns(url).map(|(addr, dur)| (addr, Some(dur)))?
     })
 }
 
@@ -274,7 +283,7 @@ fn resolve_dns(url: &Url) -> Result<(IpAddr, Duration), TtfbError> {
     // probably the DNS implementation/OS has a DNS cache
     let response = resolver
         .lookup_ip(url.host_str().unwrap())
-        .map_err(|err| TtfbError::CantResolveDns(ResolveDnsError::Other(err)))?;
+        .map_err(|err| TtfbError::CantResolveDns(ResolveDnsError::Other(Box::new(err))))?;
     let duration = begin.elapsed();
 
     let ipv4_addrs = response
