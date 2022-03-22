@@ -1,3 +1,7 @@
+# v1.3.1 (2022-03-22)
+- bugfix, also allow https for IP-Addresses (`$ ttfb https://1.1.1.1` is valid)
+- updated dependencies
+
 # v1.3.0 (2022-01-19)
 - improved code quality
 - improved doc

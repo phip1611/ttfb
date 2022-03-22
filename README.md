@@ -30,6 +30,7 @@ The library exposes the function `ttfb(url: String)`. The string can be for exam
 - `https://phip1611.de?foo=bar`
 - `https://sub.domain.phip1611.de?foo=bar`
 - `http://12.34.56.78/foobar`
+- `https://1.1.1.1`
 - `12.34.56.78/foobar` (defaults to `http://`)
 - `12.34.56.78` (defaults to `http://`)
 
