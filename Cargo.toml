@@ -5,9 +5,9 @@ Library + CLI-Tool to measure the TTFB (time to first byte) of HTTP(S) requests.
 Additionally, this crate measures the times of DNS lookup, TCP connect, and
 TLS handshake.
 """
-version = "1.3.0"
+version = "1.3.1"
 edition = "2021"
-keywords = ["ttfb", "http", "timings"]
+keywords = ["ttfb", "http", "timings", "web"]
 categories = ["network-programming"]
 readme = "README.md"
 license = "MIT"
