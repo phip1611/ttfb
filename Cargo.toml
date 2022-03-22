@@ -1,8 +1,8 @@
 [package]
 name = "ttfb"
 description = """
-Library + CLI-Tool to measure the TTFB (time to first byte) of HTTP requests.
-Additionally, this crate measures the times of DNS lookup, TCP connect and
+Library + CLI-Tool to measure the TTFB (time to first byte) of HTTP(S) requests.
+Additionally, this crate measures the times of DNS lookup, TCP connect, and
 TLS handshake.
 """
 version = "1.3.0"
