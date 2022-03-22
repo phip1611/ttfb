@@ -21,7 +21,7 @@ documentation = "https://docs.rs/ttfb"
 # +++ LIBRARY +++
 
 # DNS over systems default DNS resolver
-trust-dns-resolver = { version = "0.20", features = ["dns-over-rustls"] }
+trust-dns-resolver = { version = "0.21", features = ["dns-over-rustls"] }
 # TLS handshake
 native-tls = "0.2"
 # automatic Display impl for enums
@@ -34,6 +34,6 @@ regex = "1.5"
 # +++ BINARY +++
 
 # CLI args parsing
-clap = "3.0"
+clap = "3.1"
 # used for the binary, not the lib
-crossterm = "0.22"
+crossterm = "0.23"
