@@ -22,8 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-//! Library + CLI-Tool to measure the TTFB (time to first byte) of HTTP requests.
-//! Additionally, this crate measures the times of DNS lookup, TCP connect and
+//! Library + CLI-Tool to measure the TTFB (time to first byte) of HTTP(S) requests.
+//! Additionally, this crate measures the times of DNS lookup, TCP connect, and
 //! TLS handshake. This crate currently only supports HTTP/1.1. It can cope with
 //! TLS 1.2 and 1.3.LICENSE.
 //!
@@ -46,6 +46,8 @@ SOFTWARE.
     clippy::redundant_pub_crate,
     clippy::fallible_impl_from
 )]
+// I can't do anything about this; fault of the dependencies
+#![allow(clippy::multiple_crate_versions)]
 #![deny(missing_debug_implementations)]
 #![deny(rustdoc::all)]
 #![allow(rustdoc::missing_doc_code_examples)]
@@ -86,6 +88,7 @@ trait TcpWithMaybeTlsStream: IoWrite + IoRead {}
 ///   - `https://phip1611.de?foo=bar`
 ///   - `https://sub.domain.phip1611.de?foo=bar`
 ///   - `http://12.34.56.78/foobar`
+///   - `https://1.1.1.1`
 ///   - `12.34.56.78/foobar` (defaults to `http://`)
 ///   - `12.34.56.78` (defaults to `http://`)
 /// - `allow_insecure_certificates`: if illegal certificates (untrusted, expired) should be accepted
@@ -143,7 +146,6 @@ fn tls_handshake_if_necessary(
     allow_insecure_certificates: bool,
 ) -> Result<(Box<dyn IoReadAndWrite>, Option<Duration>), TtfbError> {
     if url.scheme() == "https" {
-        assert_https_requires_domain_name(url)?;
         let tls = TlsConnector::builder()
             .danger_accept_invalid_hostnames(allow_insecure_certificates)
             .danger_accept_invalid_certs(allow_insecure_certificates)
@@ -151,8 +153,11 @@ fn tls_handshake_if_necessary(
             .map_err(TtfbError::CantConnectTls)?;
         let now = Instant::now();
         // hostname not used for DNS, only for certificate validation
+        // can also be a IP address, because Certificates can have the IP-Address in
+        // the "cert subject alternative name" field.
+        let certificate_host = url.host_str().unwrap_or("");
         let mut stream = tls
-            .connect(url.host_str().unwrap_or(""), tcp)
+            .connect(certificate_host, tcp)
             .map_err(TtfbError::CantVerifyTls)?;
         stream.flush().map_err(TtfbError::OtherStreamError)?;
         let tls_handshake_duration = now.elapsed();
@@ -229,18 +234,6 @@ fn prepend_default_scheme_if_necessary(url: String) -> String {
     }
 
     format!("http://{}", url)
-}
-
-/// If the user specifies the "https" scheme, we must have a domain name and no IP.
-/// Otherwise we can't check the certificate.
-fn assert_https_requires_domain_name(url: &Url) -> Result<(), TtfbError> {
-    if url.domain().is_none() && url.scheme() == "https" {
-        Err(TtfbError::InvalidUrl(
-            InvalidUrlError::HttpsRequiresDomainName,
-        ))
-    } else {
-        Ok(())
-    }
 }
 
 /// Assert the scheme is on the allow list. Currently, we only allow "http" and "https".
@@ -394,7 +387,7 @@ mod tests {
     // we ignore this test, because it relies on the given domain being available
     #[ignore]
     #[test]
-    fn test_single_run() {
+    fn test_against_external_services() {
         let r = ttfb("http://phip1611.de".to_string(), false).unwrap();
         assert!(r.dns_duration_rel().is_some());
         assert!(r.tls_handshake_duration_rel().is_none());
@@ -406,5 +399,10 @@ mod tests {
         let r = ttfb("https://expired.badssl.com".to_string(), true).unwrap();
         assert!(r.dns_duration_rel().is_some());
         assert!(r.tls_handshake_duration_rel().is_some());
+        let r = ttfb("https://1.1.1.1".to_string(), false).unwrap();
+        assert!(
+            r.tls_handshake_duration_rel().is_some(),
+            "must execute TLS handshake"
+        );
     }
 }
