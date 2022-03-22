@@ -36,6 +36,8 @@ SOFTWARE.
     clippy::redundant_pub_crate,
     clippy::fallible_impl_from
 )]
+// I can't do anything about this; fault of the dependencies
+#![allow(clippy::multiple_crate_versions)]
 #![deny(missing_debug_implementations)]
 #![deny(rustdoc::all)]
 
@@ -98,13 +100,13 @@ fn exit_error(err: TtfbError) -> ! {
 /// This exits early, if the input is invalid. A help message
 /// will be displayed by the user. This is handled by crate `clap`.
 fn get_url_from_user() -> ArgMatches {
-    let clap = clap::App::new("ttfb")
+    let clap = clap::Command::new("ttfb")
         .version(CRATE_VERSION)
         .about(
             "
-        CLI utility to measure the TTFB (time to first byte) of HTTP(s) requests.
+        CLI utility to measure the TTFB (time to first byte) of HTTP(S) requests.
         Additionally, this crate measures the relative and absolute times of DNS
-        lookup, TCP connect and TLS handshake.
+        lookup, TCP connect, and TLS handshake.
         ",
         )
         .author("Philipp Schuster <https://github.com/phip1611/ttfb>")

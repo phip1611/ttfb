@@ -40,8 +40,8 @@ pub enum ResolveDnsError {
 impl Error for ResolveDnsError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            ResolveDnsError::Other(err) => Some(err),
-            ResolveDnsError::NoResults => None,
+            Self::Other(err) => Some(err),
+            Self::NoResults => None,
         }
     }
 }
