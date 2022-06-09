@@ -48,9 +48,15 @@ SOFTWARE.
 )]
 // I can't do anything about this; fault of the dependencies
 #![allow(clippy::multiple_crate_versions)]
+// allow: required because of derive macro.. :(
+#![allow(clippy::use_self)]
+#![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
 #![deny(rustdoc::all)]
 #![allow(rustdoc::missing_doc_code_examples)]
+
+pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
+pub use outcome::TtfbOutcome;
 
 use native_tls::TlsConnector;
 use regex::Regex;
@@ -61,11 +67,8 @@ use std::time::{Duration, Instant};
 use trust_dns_resolver::Resolver as DnsResolver;
 use url::Url;
 
-use crate::error::{InvalidUrlError, ResolveDnsError, TtfbError};
-use crate::outcome::TtfbOutcome;
-
-pub mod error;
-pub mod outcome;
+mod error;
+mod outcome;
 
 const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
