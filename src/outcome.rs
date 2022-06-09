@@ -21,12 +21,12 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
+//! Module for [`TtfbOutcome`].
 
 use std::net::IpAddr;
 use std::time::Duration;
 
-/// The final result of this library. It contains all the measured
-/// timings.
+/// The final result of this library. It contains all the measured timings.
 #[derive(Debug)]
 pub struct TtfbOutcome {
     /// Copy of the user input.
@@ -51,7 +51,7 @@ pub struct TtfbOutcome {
 
 impl TtfbOutcome {
     #[allow(clippy::too_many_arguments)]
-    pub const fn new(
+    pub(crate) const fn new(
         user_input: String,
         ip_addr: IpAddr,
         port: u16,

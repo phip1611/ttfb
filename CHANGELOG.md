@@ -1,3 +1,8 @@
+# v1.4.0 (2022-06-09)
+- small **breaking** change: import paths of `ttfb::outcome::TtfbOutcome` and `ttfb::error::TtfbError`
+  were flattened to `ttfb::{TtfbError, TtfbOutcome}`
+- small internal code and documentation improvements
+
 # v1.3.1 (2022-03-22)
 - bugfix, also allow https for IP-Addresses (`$ ttfb https://1.1.1.1` is valid)
 - updated dependencies

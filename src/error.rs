@@ -21,6 +21,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
+//! Module for [`TtfbError`].
 
 use derive_more::Display;
 use native_tls::HandshakeError;
@@ -29,10 +30,13 @@ use std::io;
 use std::net::TcpStream;
 use trust_dns_resolver::error::ResolveError;
 
+/// Errors during DNS resolving.
 #[derive(Debug, Display)]
 pub enum ResolveDnsError {
+    /// Can't find DNS entry for the given host.
     #[display(fmt = "Can't find DNS entry for the given host.")]
     NoResults,
+    /// Couldn't resolve DNS for given host.
     #[display(fmt = "Couldn't resolve DNS for given host because: {}", _0)]
     Other(Box<ResolveError>),
 }
@@ -46,40 +50,50 @@ impl Error for ResolveDnsError {
     }
 }
 
+/// Errors during URL parsing.
 #[derive(Debug, Display)]
 pub enum InvalidUrlError {
+    /// No input was provided. Provide a URL, such as <https://example.com> or <https://1.2.3.4:443>.
     #[display(
-        fmt = "No input provided. Provide a URL, like https://example.com or https://1.2.3.4:443"
+        fmt = "No input was provided. Provide a URL, such as https://example.com or https://1.2.3.4:443"
     )]
     MissingInput,
-    #[display(fmt = "The URL is illegal, because of {}", _0)]
+    /// The URL is illegal.
+    #[display(fmt = "The URL is illegal because: {}", _0)]
     WrongFormat(String),
-    #[display(fmt = "This tools only supports http and https")]
+    /// This tools only supports http and https.
+    #[display(fmt = "This tools only supports http and https.")]
     WrongScheme,
-    #[display(
-        fmt = "https can only be used when a domain name is given. IP addresses don't work."
-    )]
-    HttpsRequiresDomainName,
+    /// Other unknown error.
+    #[display(fmt = "Other unknown error.")]
     Other,
 }
 
 impl Error for InvalidUrlError {}
 
+/// Errors of the public interface of this crate.
 #[derive(Debug, Display)]
 pub enum TtfbError {
-    #[display(fmt = "Invalid URL! {}", _0)]
+    /// Invalid URL
+    #[display(fmt = "Invalid URL: {}", _0)]
     InvalidUrl(InvalidUrlError),
-    #[display(fmt = "Can't resolve DNS! {}", _0)]
+    /// Can't resolve DNS.
+    #[display(fmt = "Can't resolve DNS because: {}", _0)]
     CantResolveDns(ResolveDnsError),
-    #[display(fmt = "Can't establish TCP-Connection! {}", _0)]
+    /// Can't establish TCP-Connection.
+    #[display(fmt = "Can't establish TCP-Connection because: {}", _0)]
     CantConnectTcp(io::Error),
-    #[display(fmt = "Can't establish TLS-Connection! {}", _0)]
+    /// Can't establish TLS-Connection.
+    #[display(fmt = "Can't establish TLS-Connection because: {}", _0)]
     CantConnectTls(native_tls::Error),
-    #[display(fmt = "Can't verify TLS-Connection! {}", _0)]
+    /// Can't verify TLS-Connection.
+    #[display(fmt = "Can't verify TLS-Connection because: {}", _0)]
     CantVerifyTls(HandshakeError<TcpStream>),
-    #[display(fmt = "Can't establish HTTP/1.1-Connection! {}", _0)]
+    /// Can't establish HTTP/1.1-Connection.
+    #[display(fmt = "Can't establish HTTP/1.1-Connection because: {}", _0)]
     CantConnectHttp(io::Error),
-    #[display(fmt = "There was a problem with the stream: {}", _0)]
+    /// There was a problem with the TCP stream.
+    #[display(fmt = "There was a problem with the TCP stream because: {}", _0)]
     OtherStreamError(io::Error),
 }
 

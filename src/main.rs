@@ -38,6 +38,10 @@ SOFTWARE.
 )]
 // I can't do anything about this; fault of the dependencies
 #![allow(clippy::multiple_crate_versions)]
+// allow: required because of derive macro.. :(
+#![allow(clippy::use_self)]
+// Not needed here. We only need this for the library!
+// #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
 #![deny(rustdoc::all)]
 
@@ -46,8 +50,8 @@ use crossterm::style::{Attribute, SetAttribute};
 use crossterm::ExecutableCommand;
 use std::io::stdout;
 use std::process::exit;
-use ttfb::error::TtfbError;
-use ttfb::outcome::TtfbOutcome;
+use ttfb::TtfbError;
+use ttfb::TtfbOutcome;
 
 const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
