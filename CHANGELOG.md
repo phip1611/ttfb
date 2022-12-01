@@ -1,3 +1,6 @@
+# v1.4.1 (2022-12-01)
+- updated dependencies
+
 # v1.4.0 (2022-06-09)
 - small **breaking** change: import paths of `ttfb::outcome::TtfbOutcome` and `ttfb::error::TtfbError`
   were flattened to `ttfb::{TtfbError, TtfbOutcome}`

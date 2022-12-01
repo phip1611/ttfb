@@ -5,7 +5,7 @@ Library + CLI-Tool to measure the TTFB (time to first byte) of HTTP(S) requests.
 Additionally, this crate measures the times of DNS lookup, TCP connect, and
 TLS handshake.
 """
-version = "1.4.0"
+version = "1.4.1"
 edition = "2021"
 keywords = ["ttfb", "http", "timings", "web"]
 categories = ["network-programming"]
@@ -21,7 +21,7 @@ documentation = "https://docs.rs/ttfb"
 # +++ LIBRARY +++
 
 # DNS over systems default DNS resolver
-trust-dns-resolver = { version = "0.21", features = ["dns-over-rustls"] }
+trust-dns-resolver = { version = "0.22", features = ["dns-over-rustls"] }
 # TLS handshake
 native-tls = "0.2"
 # automatic Display impl for enums
@@ -36,4 +36,4 @@ regex = "1.5"
 # CLI args parsing
 clap = "3.1"
 # used for the binary, not the lib
-crossterm = "0.23"
+crossterm = "0.25"
