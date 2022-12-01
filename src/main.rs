@@ -45,7 +45,7 @@ SOFTWARE.
 #![deny(missing_debug_implementations)]
 #![deny(rustdoc::all)]
 
-use clap::{Arg, ArgMatches};
+use clap::Parser;
 use crossterm::style::{Attribute, SetAttribute};
 use crossterm::ExecutableCommand;
 use std::io::stdout;
@@ -65,26 +65,27 @@ macro_rules! unwrap_or_exit {
     };
 }
 
+/// CLI Arguments for `clap`.
+#[derive(Parser, Debug)]
+#[command(
+    author,
+    version,
+    about = "CLI utility to measure the TTFB (time to first byte) of HTTP(S) requests. \
+        Additionally, this crate measures the relative and absolute times of DNS \
+        lookup, TCP connect, and TLS handshake."
+)]
 struct TtfbArgs {
+    /// Name of the host. An IP address or a URL. "https://"-prefix must be provided for HTTPS/TLS.
     host: String,
+    /// Whether insecure TLS-certificates (e.g., expired, wrong domain name) are allowed.
+    /// Similar to `-k` of `curl`.
+    #[arg(short = 'k', long = "insecure")]
     allow_insecure_certificates: bool,
 }
 
-impl From<ArgMatches> for TtfbArgs {
-    fn from(args: ArgMatches) -> Self {
-        Self {
-            host: args.value_of_t("HOST").unwrap(),
-            allow_insecure_certificates: args.is_present("insecure"),
-        }
-    }
-}
-
 /// Small CLI binary wrapper around the [`ttfb`] lib.
-/// Handles argument parsing via [`clap`] crate.
-/// Similar to curl, it takes a `-k/--insecure` option.
 fn main() {
-    let input = get_url_from_user();
-    let input = TtfbArgs::from(input);
+    let input: TtfbArgs = TtfbArgs::parse();
     let res = ttfb::ttfb(input.host, input.allow_insecure_certificates);
     let ttfb = unwrap_or_exit!(res);
     print_outcome(&ttfb).unwrap();
@@ -98,39 +99,6 @@ fn exit_error(err: TtfbError) -> ! {
     eprint!("{}", err);
     eprintln!();
     exit(-1)
-}
-
-/// Get the URL we want to check from the user as argument.
-/// This exits early, if the input is invalid. A help message
-/// will be displayed by the user. This is handled by crate `clap`.
-fn get_url_from_user() -> ArgMatches {
-    let clap = clap::Command::new("ttfb")
-        .version(CRATE_VERSION)
-        .about(
-            "
-        CLI utility to measure the TTFB (time to first byte) of HTTP(S) requests.
-        Additionally, this crate measures the relative and absolute times of DNS
-        lookup, TCP connect, and TLS handshake.
-        ",
-        )
-        .author("Philipp Schuster <https://github.com/phip1611/ttfb>")
-        .arg(
-            Arg::new("HOST")
-                .value_name("HOST")
-                .help("IP or Host/Domain. \"https://\"-prefix must be provided for HTTPS/TLS.")
-                .required(true),
-        )
-        .arg(
-            Arg::new("insecure")
-                .value_name("insecure")
-                .takes_value(false)
-                .short('k')
-                .long("insecure")
-                .help("Ignore invalid certificates (expired, wrong domain name) when TLS is used")
-                .required(false),
-        );
-    // this will exit, if the arguments are not available
-    clap.get_matches()
 }
 
 fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {

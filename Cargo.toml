@@ -32,8 +32,21 @@ regex = "1.5"
 
 
 # +++ BINARY +++
-
-# CLI args parsing
-clap = "3.1"
 # used for the binary, not the lib
 crossterm = "0.25"
+
+# CLI args parsing
+[dependencies.clap]
+version = "4.0"
+features = [
+    "std",
+    "color",
+    "help",
+    "usage",
+    "error-context",
+    "suggestions",
+    "derive",
+    "unicode",
+    "wrap_help"
+]
+
