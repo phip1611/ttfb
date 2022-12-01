@@ -1,3 +1,6 @@
+# v1.5.1 (2022-12-01)
+- minor internal improvement
+
 # v1.5.0 (2022-12-01)
 - updated dependencies
 - the MSRV is 1.60.0 for the CLI utility (binary) but still 1.56.1 if you use
