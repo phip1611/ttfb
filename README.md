@@ -47,4 +47,5 @@ HTTP Resp TTFB:        76.432         149.046
 ```
 
 ## Rust version / MSRV
-This crate uses the Rust edition 2021. This means, the MSRV is 1.56.1 stable.
+If you use this as library, the MSRV is 1.56.1 stable.
+If you use/install the CLI utility, the MSRV is 1.60.0.

@@ -1,5 +1,7 @@
-# v1.4.1 (2022-12-01)
+# v1.5.0 (2022-12-01)
 - updated dependencies
+- the MSRV is 1.60.0 for the CLI utility (binary) but still 1.56.1 if you use
+  this crate as library.
 
 # v1.4.0 (2022-06-09)
 - small **breaking** change: import paths of `ttfb::outcome::TtfbOutcome` and `ttfb::error::TtfbError`
