@@ -26,8 +26,48 @@ jobs:
           override: true
       - name: Build
         run: cargo build --all-targets --verbose
+
+  tests:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - nightly
+          - 1.60.0 # MSVR
+    steps:
+      - uses: actions/checkout@v2
+      # Important preparation step: override the latest default Rust version in GitHub CI
+      # with the current value of the iteration in the "strategy.matrix.rust"-array.
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: default
+          toolchain: ${{ matrix.rust }}
+          override: true
+      - name: Build
+        run: cargo test --all-targets --verbose
+
+  network-tests:
+    needs: tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - nightly
+          - 1.60.0 # MSVR
+    steps:
+      - uses: actions/checkout@v2
+      # Important preparation step: override the latest default Rust version in GitHub CI
+      # with the current value of the iteration in the "strategy.matrix.rust"-array.
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: default
+          toolchain: ${{ matrix.rust }}
+          override: true
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --verbose -- --cfg network_tests
 
   style_checks:
     runs-on: ubuntu-latest

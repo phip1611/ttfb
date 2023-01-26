@@ -370,7 +370,14 @@ mod tests {
         )
         .expect_err("must not accept ftp");
     }
+}
 
+/// Tests that rely on an external network connection.
+#[cfg(all(test, network_tests))]
+mod network_tests {
+    use super::*;
+
+    #[ignore]
     #[test]
     fn test_resolve_dns_if_necessary() {
         let url1 = Url::from_str("http://phip1611.de").expect("must be valid");
@@ -387,7 +394,6 @@ mod tests {
         resolve_dns_if_necessary(&url5).expect("must be valid");
     }
 
-    // we ignore this test, because it relies on the given domain being available
     #[ignore]
     #[test]
     fn test_against_external_services() {
