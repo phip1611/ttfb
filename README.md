@@ -16,7 +16,7 @@ DNS resolving of domains and [native-tls](crates.io/crate/native-tls) for handli
 CLI + lib work on Linux, MacOS, and Windows.
 
 ## Usage Binary/CLI tool
-Install with `cargo install ttfb`. It takes one argument and passes it to the library.
+Install with `cargo install ttfb --features bin`. It takes one argument and passes it to the library.
 The string you pass here as first argument is the same as for the library function.
 
 Additionally, the CLI takes a `-k/--insecure` option. \
@@ -47,5 +47,5 @@ HTTP Resp TTFB:        76.432         149.046
 ```
 
 ## Rust version / MSRV
-If you use this as library, the MSRV is 1.56.1 stable.
-If you use/install the CLI utility, the MSRV is 1.60.0.
+If you use this as library, the MSRV is 1.57.0 stable.
+If you use/install the CLI utility, the MSRV is 1.64.0.

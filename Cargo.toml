@@ -5,7 +5,7 @@ Library + CLI-Tool to measure the TTFB (time to first byte) of HTTP(S) requests.
 Additionally, this crate measures the times of DNS lookup, TCP connect, and
 TLS handshake.
 """
-version = "1.5.1"
+version = "1.6.0"
 edition = "2021"
 keywords = ["ttfb", "http", "timings", "web"]
 categories = ["network-programming", "command-line-utilities"]
@@ -16,6 +16,14 @@ repository = "https://github.com/phip1611/ttfb"
 documentation = "https://docs.rs/ttfb"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "ttfb"
+required-features = ["bin"]
+
+# Feature for all additional dependencies of the binary.
+[features]
+bin = ["clap", "crossterm"]
 
 [dependencies]
 # +++ LIBRARY +++
@@ -30,14 +38,16 @@ derive_more = { version = "0.99", default-features = false, features = ["display
 url = "2.2"
 regex = "1.5"
 
-
 # +++ BINARY +++
 # used for the binary, not the lib
-crossterm = "0.25"
+[dependencies.crossterm]
+optional = true
+version = "0.25"
 
 # CLI args parsing
 [dependencies.clap]
-version = "4.0"
+optional = true
+version = "~4.1"
 features = [
     "std",
     "color",
@@ -49,4 +59,3 @@ features = [
     "unicode",
     "wrap_help"
 ]
-
