@@ -76,7 +76,7 @@ trait IoReadAndWrite: IoWrite + IoRead {}
 
 impl<T: IoRead + IoWrite> IoReadAndWrite for T {}
 
-/// Common super trait for TCP-Stream or TLS<TCP>-Stream.
+/// Common super trait for TCP-Stream or `TLS<TCP>`-Stream.
 trait TcpWithMaybeTlsStream: IoWrite + IoRead {}
 
 /// Takes a URL and connects to it via http/1.1. Measures time for
@@ -140,7 +140,7 @@ fn tcp_connect(addr: IpAddr, port: u16) -> Result<(TcpStream, Duration), TtfbErr
     Ok((tcp, tcp_connect_duration))
 }
 
-/// If the scheme is "https", this replaces the TCP-Stream with a TLS<TCP>-stream.
+/// If the scheme is "https", this replaces the TCP-Stream with a `TLS<TCP>`-stream.
 /// All data will be encrypted using the TLS-functionality of the crate `native-tls`.
 /// If TLS is used, it measures the time of the TLS handshake.
 fn tls_handshake_if_necessary(
@@ -170,7 +170,7 @@ fn tls_handshake_if_necessary(
     }
 }
 
-/// Executes the HTTP/1.1 GET-Request on the given socket. This works with TCP or TLS<TCP>.
+/// Executes the HTTP/1.1 GET-Request on the given socket. This works with TCP or `TLS<TCP>`.
 /// Afterwards, it waits for the first byte and measures all the times.
 fn execute_http_get(
     tcp: &mut Box<dyn IoReadAndWrite>,
@@ -300,7 +300,7 @@ fn resolve_dns(url: &Url) -> Result<(IpAddr, Duration), TtfbError> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(network_tests)))]
 mod tests {
     use crate::parse_input_as_url;
 
@@ -373,6 +373,7 @@ mod tests {
 }
 
 /// Tests that rely on an external network connection.
+/// Sort of integration tests.
 #[cfg(all(test, network_tests))]
 mod network_tests {
     use super::*;
@@ -394,7 +395,6 @@ mod network_tests {
         resolve_dns_if_necessary(&url5).expect("must be valid");
     }
 
-    #[ignore]
     #[test]
     fn test_against_external_services() {
         let r = ttfb("http://phip1611.de".to_string(), false).unwrap();

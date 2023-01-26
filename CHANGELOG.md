@@ -1,3 +1,7 @@
+# v1.6.0 (2023-01-26)
+- MSRV of the binary is now 1.64.0
+- MSRV of the library is 1.57.0
+
 # v1.5.1 (2022-12-01)
 - minor internal improvement
 
