@@ -1,6 +1,18 @@
 # v1.7.0 (2023-09-22)
 - **BREAKING** The MSRV of the library is `1.64.0` stable.
 - **BREAKING** The MSRV of the binary is `1.70.0` stable.
+- introduced new `DurationPair` struct
+- **BREAKING** replaced several getters
+  - replaced `TtfbOutcome::dns_duration_rel` and `TtfbOutcome::dns_duration_abs`
+    with `TtfbOutcome::dns_lookup_duration` which returns a `DurationPair`
+  - replaced `TtfbOutcome::tcp_connect_duration_rel` and `TtfbOutcome::tcp_connect_duration_abs`
+    with `TtfbOutcome::tcp_connect_duration` which returns a `DurationPair`
+  - replaced `TtfbOutcome::tls_handshake_duration_rel` and `TtfbOutcome::tls_handshake_duration_abs`
+    with `TtfbOutcome::tls_handshake_duration` which returns a `DurationPair`
+  - replaced `TtfbOutcome::http_get_send_duration_rel` and `TtfbOutcome::http_get_send_duration_abs`
+    with `TtfbOutcome::http_get_send_duration` which returns a `DurationPair`
+  - replaced `TtfbOutcome::http_ttfb_duration_rel` and `TtfbOutcome::http_ttfb_duration_abs`
+    with `TtfbOutcome::ttfb_duration` which returns a `DurationPair`
 - dependencies updated
 
 # v1.6.0 (2023-01-26)

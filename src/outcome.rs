@@ -26,8 +26,36 @@ SOFTWARE.
 use std::net::IpAddr;
 use std::time::Duration;
 
+/// Bundles the duration of a measurement step with the total duration since
+/// the beginning of the overall measurement.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct DurationPair {
+    rel: Duration,
+    total: Duration,
+}
+
+impl DurationPair {
+    fn new(duration_step: Duration, absolute_duration_so_far: Duration) -> Self {
+        Self {
+            rel: duration_step,
+            total: absolute_duration_so_far + duration_step,
+        }
+    }
+
+    /// Returns the duration of that step.
+    pub const fn relative(&self) -> Duration {
+        self.rel
+    }
+
+    /// Returns the total duration between the start of the measurement
+    /// and the end of this measurement step.
+    pub const fn total(&self) -> Duration {
+        self.total
+    }
+}
+
 /// The final result of this library. It contains all the measured timings.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TtfbOutcome {
     /// Copy of the user input.
     user_input: String,
@@ -75,77 +103,52 @@ impl TtfbOutcome {
         }
     }
 
-    /// Getter for [`Self::user_input`].
+    /// Getter for the provided user input (Host or IP address).
     pub fn user_input(&self) -> &str {
         &self.user_input
     }
 
-    /// Getter for [`Self::ip_addr`] (relative time).
+    /// Getter for `ip_addr` that was used.
     pub const fn ip_addr(&self) -> IpAddr {
         self.ip_addr
     }
 
-    /// Getter for [`Self::port`] (relative time).
+    /// Getter for `port` that was used.
     pub const fn port(&self) -> u16 {
         self.port
     }
 
-    /// Getter for [`Self::dns_duration_rel`] (relative time).
-    pub const fn dns_duration_rel(&self) -> Option<&Duration> {
-        self.dns_duration_rel.as_ref()
-    }
-
-    /// Getter for [`Self::tcp_connect_duration_rel`] (relative time).
-    pub const fn tcp_connect_duration_rel(&self) -> Duration {
-        self.tcp_connect_duration_rel
-    }
-
-    /// Getter for [`Self::tls_handshake_duration_rel`] (relative time).
-    pub const fn tls_handshake_duration_rel(&self) -> Option<&Duration> {
-        self.tls_handshake_duration_rel.as_ref()
-    }
-
-    /// Getter for [`Self::http_get_send_duration_rel`] (relative time).
-    pub const fn http_get_send_duration_rel(&self) -> Duration {
-        self.http_get_send_duration_rel
-    }
-
-    /// Getter for [`Self::http_ttfb_duration_rel`] (relative time).
-    pub const fn http_ttfb_duration_rel(&self) -> Duration {
-        self.http_ttfb_duration_rel
-    }
-
-    /// Getter for the absolute duration from the beginning to the TCP connect.
-    /// Calculated by the relative TCP connect time + DNS relative times.
-    pub fn tcp_connect_duration_abs(&self) -> Duration {
+    /// Returns the [`DurationPair`] for the DNS step, if DNS lookup was necessary.
+    pub fn dns_lookup_duration(&self) -> Option<DurationPair> {
         self.dns_duration_rel
-            .unwrap_or_else(|| Duration::from_secs(0))
-            + self.tcp_connect_duration_rel
-    }
-    /// Getter for the absolute duration from the beginning to the TLS handshake.
-    /// Calculated by the relative TLS handshake time + all previous relative times.
-    pub fn tls_handshake_duration_abs(&self) -> Option<Duration> {
-        self.tls_handshake_duration_rel
-            .map(|d| d + self.tcp_connect_duration_abs())
+            .map(|d| DurationPair::new(d, Duration::default()))
     }
 
-    /// Getter for the absolute duration from the beginning to the HTTP GET send.
-    /// Calculated by the relative HTTP GET send time + all previous relative times.
-    pub fn http_get_send_duration_abs(&self) -> Duration {
-        self.tls_handshake_duration_abs()
-            .unwrap_or_else(|| self.tcp_connect_duration_abs())
-            + self.http_get_send_duration_rel
+    /// Returns the [`DurationPair`] for the establishment of the TCP connection.
+    pub fn tcp_connect_duration(&self) -> DurationPair {
+        let abs_dur_so_far = self.dns_lookup_duration().unwrap_or_default().total();
+        DurationPair::new(self.tcp_connect_duration_rel, abs_dur_so_far)
     }
 
-    /// Getter for the absolute duration from the beginning to the TTFB.
-    /// Calculated by the relative TTFB time + all previous relative times.
-    pub fn http_ttfb_duration_abs(&self) -> Duration {
-        self.http_ttfb_duration_rel + self.http_get_send_duration_abs()
+    /// Returns the [`DurationPair`] for the TLS handshake, if the TLS handshake was necessary.
+    pub fn tls_handshake_duration(&self) -> Option<DurationPair> {
+        self.tls_handshake_duration_rel.map(|dur| {
+            let abs_dur_so_far = self.tcp_connect_duration().total();
+            DurationPair::new(dur, abs_dur_so_far)
+        })
     }
 
-    /*pub fn http_content_download_duration(&self) -> Duration {
-        self.http_content_download_duration
-    }*/
+    /// Returns the [`DurationPair`] for the transmission of the HTTP GET request.
+    pub fn http_get_send_duration(&self) -> DurationPair {
+        let abs_dur_so_far = self.tls_handshake_duration().unwrap_or_default().total();
+        DurationPair::new(self.http_get_send_duration_rel, abs_dur_so_far)
+    }
+
+    /// Returns the [`DurationPair`] for the time to first byte (TTFB) of the HTTP response.
+    pub fn ttfb_duration(&self) -> DurationPair {
+        let abs_dur_so_far = self.http_get_send_duration().total();
+        DurationPair::new(self.http_ttfb_duration_rel, abs_dur_so_far)
+    }
 }
 
 #[cfg(test)]
@@ -155,7 +158,7 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn test_outcome() {
+    fn outcome_durations_are_sane() {
         let outcome = TtfbOutcome::new(
             "https://phip1611.de".to_string(),
             IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
@@ -167,28 +170,32 @@ mod tests {
             Duration::from_millis(5),
         );
         assert_eq!(
-            outcome.dns_duration_rel().unwrap().as_millis(),
+            outcome.dns_lookup_duration().unwrap().total().as_millis(),
             1,
             "DNS is the very first operation"
         );
         assert_eq!(
-            outcome.tcp_connect_duration_abs().as_millis(),
+            outcome.tcp_connect_duration().total().as_millis(),
             1 + 2,
             "DNS + TCP connect"
         );
         println!("{:#?}", outcome);
         assert_eq!(
-            outcome.tls_handshake_duration_abs().unwrap().as_millis(),
+            outcome
+                .tls_handshake_duration()
+                .unwrap()
+                .total()
+                .as_millis(),
             1 + 2 + 3,
             "DNS + TCP connect + TLS handshake"
         );
         assert_eq!(
-            outcome.http_get_send_duration_abs().as_millis(),
+            outcome.http_get_send_duration().total().as_millis(),
             1 + 2 + 3 + 4,
             "DNS + TCP connect + TLS handshake + HTTP GET send"
         );
         assert_eq!(
-            outcome.http_ttfb_duration_abs().as_millis(),
+            outcome.ttfb_duration().total().as_millis(),
             1 + 2 + 3 + 4 + 5,
             "Total TTFB: DNS + TCP connect + TLS handshake + HTTP GET send + relative TTFB"
         );

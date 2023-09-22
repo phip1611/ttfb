@@ -55,7 +55,7 @@ SOFTWARE.
 #![deny(rustdoc::all)]
 
 pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
-pub use outcome::TtfbOutcome;
+pub use outcome::{TtfbOutcome, DurationPair};
 
 use native_tls::TlsConnector;
 use regex::Regex;
@@ -397,19 +397,19 @@ mod network_tests {
     #[test]
     fn test_against_external_services() {
         let r = ttfb("http://phip1611.de".to_string(), false).unwrap();
-        assert!(r.dns_duration_rel().is_some());
-        assert!(r.tls_handshake_duration_rel().is_none());
+        assert!(r.dns_lookup_duration().is_some());
+        assert!(r.tls_handshake_duration().is_none());
         let r = ttfb("https://phip1611.de".to_string(), false).unwrap();
-        assert!(r.dns_duration_rel().is_some());
-        assert!(r.tls_handshake_duration_rel().is_some());
+        assert!(r.dns_lookup_duration().is_some());
+        assert!(r.tls_handshake_duration().is_some());
         let r = ttfb("https://expired.badssl.com".to_string(), false);
         assert!(r.is_err());
         let r = ttfb("https://expired.badssl.com".to_string(), true).unwrap();
-        assert!(r.dns_duration_rel().is_some());
-        assert!(r.tls_handshake_duration_rel().is_some());
+        assert!(r.dns_lookup_duration().is_some());
+        assert!(r.tls_handshake_duration().is_some());
         let r = ttfb("https://1.1.1.1".to_string(), false).unwrap();
         assert!(
-            r.tls_handshake_duration_rel().is_some(),
+            r.tls_handshake_duration().is_some(),
             "must execute TLS handshake"
         );
     }
