@@ -55,7 +55,7 @@ SOFTWARE.
 #![deny(rustdoc::all)]
 
 pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
-pub use outcome::TtfbOutcome;
+pub use outcome::{DurationPair, TtfbOutcome};
 
 use native_tls::TlsConnector;
 use regex::Regex;
@@ -185,7 +185,7 @@ fn execute_http_get(
     let mut one_byte_buf = [0_u8];
     let now = Instant::now();
     tcp.read_exact(&mut one_byte_buf)
-        .map_err(TtfbError::CantConnectHttp)?;
+        .map_err(|_e| TtfbError::NoHttpResponse)?;
     let http_ttfb_duration = now.elapsed();
 
     // todo can lead to error, not every server responds with EOF
@@ -205,7 +205,6 @@ fn execute_http_get(
 
 /// Constructs the header for a HTTP/1.1 GET-Request.
 fn build_http11_header(url: &Url) -> String {
-    // with gzip, deflate, br we prevent
     format!(
         "GET {path} HTTP/1.1\r\n\
         Host: {host}\r\n\
@@ -397,19 +396,19 @@ mod network_tests {
     #[test]
     fn test_against_external_services() {
         let r = ttfb("http://phip1611.de".to_string(), false).unwrap();
-        assert!(r.dns_duration_rel().is_some());
-        assert!(r.tls_handshake_duration_rel().is_none());
+        assert!(r.dns_lookup_duration().is_some());
+        assert!(r.tls_handshake_duration().is_none());
         let r = ttfb("https://phip1611.de".to_string(), false).unwrap();
-        assert!(r.dns_duration_rel().is_some());
-        assert!(r.tls_handshake_duration_rel().is_some());
+        assert!(r.dns_lookup_duration().is_some());
+        assert!(r.tls_handshake_duration().is_some());
         let r = ttfb("https://expired.badssl.com".to_string(), false);
         assert!(r.is_err());
         let r = ttfb("https://expired.badssl.com".to_string(), true).unwrap();
-        assert!(r.dns_duration_rel().is_some());
-        assert!(r.tls_handshake_duration_rel().is_some());
+        assert!(r.dns_lookup_duration().is_some());
+        assert!(r.tls_handshake_duration().is_some());
         let r = ttfb("https://1.1.1.1".to_string(), false).unwrap();
         assert!(
-            r.tls_handshake_duration_rel().is_some(),
+            r.tls_handshake_duration().is_some(),
             "must execute TLS handshake"
         );
     }
