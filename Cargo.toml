@@ -42,7 +42,7 @@ regex = "1.5"
 # used for the binary, not the lib
 [dependencies.crossterm]
 optional = true
-version = "0.25"
+version = "0.27"
 
 # CLI args parsing
 [dependencies.clap]
