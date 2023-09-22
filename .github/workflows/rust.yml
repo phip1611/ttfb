@@ -11,7 +11,7 @@ jobs:
       matrix:
         runs-on: [ macos-latest, ubuntu-latest, windows-latest ]
         # 1.64: MSVR of the CLI binary
-        rust: [ 1.64.0, stable, nightly ]
+        rust: [ 1.70.0, stable, nightly ]
     runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
@@ -38,7 +38,7 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.57 # MSRV of the lib.
+          toolchain: 1.64 # MSRV of the lib.
       - name: Build Lib as Dependency with MSRV
         run: cd ttfb-lib-msrv-check && cargo build --all-targets --verbose
 
