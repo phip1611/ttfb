@@ -36,7 +36,7 @@ native-tls = "0.2"
 derive_more = { version = "0.99", default-features = false, features = ["display"] }
 # nice abstraction of URL
 url = "2.2"
-regex = "1.5"
+regex = "1.9"
 
 # +++ BINARY +++
 # used for the binary, not the lib
