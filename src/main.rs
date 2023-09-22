@@ -114,15 +114,16 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
     stdout()
         .execute(SetAttribute(Attribute::Reset))
         .map_err(|err| err.to_string())?;
-    if ttfb.dns_duration_rel().is_some() {
+    if let Some(duration) = ttfb.dns_duration_rel() {
+        // For DNS, abs and rel time is the same (because it happens first).
+        let duration = duration.as_secs_f64() * 1000.0;
         print!(
             "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
             property = "DNS Lookup",
-            rel_time = ttfb.dns_duration_rel().unwrap().as_secs_f64() * 1000.0,
-            // for DNS abs and rel time is the same (because it happens first)
-            abs_time = ttfb.dns_duration_rel().unwrap().as_secs_f64() * 1000.0,
+            rel_time = duration,
+            abs_time = duration,
         );
-        if ttfb.dns_duration_rel().unwrap().as_millis() < 2 {
+        if duration < 2.0 {
             print!("  (probably cached)");
         }
         println!();
@@ -133,13 +134,16 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         rel_time = ttfb.tcp_connect_duration_rel().as_secs_f64() * 1000.0,
         abs_time = ttfb.tcp_connect_duration_abs().as_secs_f64() * 1000.0,
     );
-    if ttfb.tls_handshake_duration_rel().is_some() {
+    if let (Some(duration_rel), Some(duration_abs)) = (
+        ttfb.tls_handshake_duration_rel(),
+        ttfb.tls_handshake_duration_abs(),
+    ) {
         println!(
             "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
             property = "TLS Handshake",
-            rel_time = ttfb.tls_handshake_duration_rel().unwrap().as_secs_f64() * 1000.0,
+            rel_time = duration_rel.as_secs_f64() * 1000.0,
             // for DNS abs and rel time is the same (because it happens first)
-            abs_time = ttfb.tls_handshake_duration_abs().unwrap().as_secs_f64() * 1000.0,
+            abs_time = duration_abs.as_secs_f64() * 1000.0,
         );
     }
     println!(
