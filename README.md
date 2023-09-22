@@ -3,7 +3,7 @@
 Similar to the network tab in Google Chrome or Mozilla Firefox, this
 crate helps you find the timings for:
 
-- DNS lookup (if domain is specified, i.e. no IP is given)
+- DNS lookup (if domain is specified, i.e., no IP is given)
 - TCP connection start
 - TLS handshake (if https/TLS is used)
 - Initial GET-Request
@@ -46,6 +46,6 @@ HTTP GET Req  :         0.011          72.614
 HTTP Resp TTFB:        76.432         149.046
 ```
 
-## Rust version / MSRV
-If you use this as library, the MSRV is 1.57.0 stable.
-If you use/install the CLI utility, the MSRV is 1.64.0.
+## MSRV
+The MSRV of the library is `1.63.0` stable.
+The MSRV of the binary is `1.70.0` stable.

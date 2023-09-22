@@ -29,25 +29,25 @@ bin = ["clap", "crossterm"]
 # +++ LIBRARY +++
 
 # DNS over systems default DNS resolver
-trust-dns-resolver = { version = "0.22", features = ["dns-over-rustls"] }
+trust-dns-resolver = { version = "0.23.0", features = ["dns-over-rustls"] }
 # TLS handshake
-native-tls = "0.2"
+native-tls = "0.2.11"
 # automatic Display impl for enums
-derive_more = { version = "0.99", default-features = false, features = ["display"] }
+derive_more = { version = "0.99.17", default-features = false, features = ["display"] }
 # nice abstraction of URL
-url = "2.2"
-regex = "1.5"
+url = "2.4.1"
+regex = "1.9.5"
 
 # +++ BINARY +++
 # used for the binary, not the lib
 [dependencies.crossterm]
 optional = true
-version = "0.25"
+version = "0.27.0"
 
 # CLI args parsing
 [dependencies.clap]
 optional = true
-version = "~4.1"
+version = "~4.4.4"
 features = [
     "std",
     "color",

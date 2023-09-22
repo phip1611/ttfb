@@ -1,3 +1,8 @@
+# v1.7.0 (2023-09-22)
+- **BREAKING** The MSRV of the library is `1.63.0` stable.
+- **BREAKING** The MSRV of the binary is `1.70.0` stable.
+- dependencies updated
+
 # v1.6.0 (2023-01-26)
 - MSRV of the binary is now 1.64.0
 - MSRV of the library is 1.57.0
