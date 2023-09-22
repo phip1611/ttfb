@@ -114,9 +114,9 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
     stdout()
         .execute(SetAttribute(Attribute::Reset))
         .map_err(|err| err.to_string())?;
-    if let Some(duration) = ttfb.dns_duration_rel() {
+    if let Some(duration_pair) = ttfb.dns_lookup_duration() {
         // For DNS, abs and rel time is the same (because it happens first).
-        let duration = duration.as_secs_f64() * 1000.0;
+        let duration = duration_pair.relative().as_secs_f64() * 1000.0;
         print!(
             "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
             property = "DNS Lookup",
@@ -131,26 +131,23 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
     println!(
         "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
         property = "TCP connect",
-        rel_time = ttfb.tcp_connect_duration_rel().as_secs_f64() * 1000.0,
-        abs_time = ttfb.tcp_connect_duration_abs().as_secs_f64() * 1000.0,
+        rel_time = ttfb.tcp_connect_duration().relative().as_secs_f64() * 1000.0,
+        abs_time = ttfb.tcp_connect_duration().total().as_secs_f64() * 1000.0,
     );
-    if let (Some(duration_rel), Some(duration_abs)) = (
-        ttfb.tls_handshake_duration_rel(),
-        ttfb.tls_handshake_duration_abs(),
-    ) {
+    if let Some(duration_pair) = ttfb.tls_handshake_duration() {
         println!(
             "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
             property = "TLS Handshake",
-            rel_time = duration_rel.as_secs_f64() * 1000.0,
+            rel_time = duration_pair.relative().as_secs_f64() * 1000.0,
             // for DNS abs and rel time is the same (because it happens first)
-            abs_time = duration_abs.as_secs_f64() * 1000.0,
+            abs_time = duration_pair.total().as_secs_f64() * 1000.0,
         );
     }
     println!(
         "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
         property = "HTTP GET Req",
-        rel_time = ttfb.http_get_send_duration_rel().as_secs_f64() * 1000.0,
-        abs_time = ttfb.http_get_send_duration_abs().as_secs_f64() * 1000.0,
+        rel_time = ttfb.http_get_send_duration().relative().as_secs_f64() * 1000.0,
+        abs_time = ttfb.http_get_send_duration().total().as_secs_f64() * 1000.0,
     );
 
     stdout()
@@ -159,8 +156,8 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
     println!(
         "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
         property = "HTTP Resp TTFB",
-        rel_time = ttfb.http_ttfb_duration_rel().as_secs_f64() * 1000.0,
-        abs_time = ttfb.http_ttfb_duration_abs().as_secs_f64() * 1000.0,
+        rel_time = ttfb.ttfb_duration().relative().as_secs_f64() * 1000.0,
+        abs_time = ttfb.ttfb_duration().total().as_secs_f64() * 1000.0,
     );
     stdout()
         .execute(SetAttribute(Attribute::Reset))
