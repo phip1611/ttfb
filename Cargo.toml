@@ -29,7 +29,7 @@ bin = ["clap", "crossterm"]
 # +++ LIBRARY +++
 
 # DNS over systems default DNS resolver
-trust-dns-resolver = { version = "0.22", features = ["dns-over-rustls"] }
+trust-dns-resolver = { version = "0.23", features = ["dns-over-rustls"] }
 # TLS handshake
 native-tls = "0.2"
 # automatic Display impl for enums
