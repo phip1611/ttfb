@@ -1,6 +1,10 @@
 name: Build
-# Triggers the workflow on push or pull request events (for any branch in a repository)
-on: [ push, pull_request, merge_group ]
+
+on:
+  merge_group:
+  pull_request:
+  push:
+
 env:
   CARGO_TERM_COLOR: always
 
