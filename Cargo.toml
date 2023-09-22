@@ -35,7 +35,7 @@ native-tls = "0.2"
 # automatic Display impl for enums
 derive_more = { version = "0.99", default-features = false, features = ["display"] }
 # nice abstraction of URL
-url = "2.2"
+url = "2.4"
 regex = "1.5"
 
 # +++ BINARY +++
