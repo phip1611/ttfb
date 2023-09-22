@@ -53,7 +53,6 @@ SOFTWARE.
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
 #![deny(rustdoc::all)]
-#![allow(rustdoc::missing_doc_code_examples)]
 
 pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
 pub use outcome::TtfbOutcome;
@@ -72,12 +71,13 @@ mod outcome;
 
 const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Trait that combines [`IoWrite`] and [`IoRead`]. This is necessary, as
+/// trait combinations such as `dyn A + B` are not allowed in Rust.
+///
+/// This trait abstracts over a `Tcp<Data>` Stream or a `Tcp<Tls<Data>>` stream.
 trait IoReadAndWrite: IoWrite + IoRead {}
 
 impl<T: IoRead + IoWrite> IoReadAndWrite for T {}
-
-/// Common super trait for TCP-Stream or `TLS<TCP>`-Stream.
-trait TcpWithMaybeTlsStream: IoWrite + IoRead {}
 
 /// Takes a URL and connects to it via http/1.1. Measures time for
 /// DNS lookup, TCP connection start, TLS handshake, and TTFB (Time to First Byte)
@@ -378,7 +378,6 @@ mod tests {
 mod network_tests {
     use super::*;
 
-    #[ignore]
     #[test]
     fn test_resolve_dns_if_necessary() {
         let url1 = Url::from_str("http://phip1611.de").expect("must be valid");

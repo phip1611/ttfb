@@ -1,90 +1,83 @@
 name: Build
-
 # Triggers the workflow on push or pull request events (for any branch in a repository)
-on: [ push, pull_request ]
-
+on: [ push, pull_request, merge_group ]
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  build_binary:
     strategy:
+      fail-fast: false
       matrix:
-        rust:
-          - stable
-          - nightly
-          - 1.64.0 # MSVR of the CLI binary
+        runs-on: [ macos-latest, ubuntu-latest, windows-latest ]
+        # 1.64: MSVR of the CLI binary
+        rust: [ 1.64.0, stable, nightly ]
+    runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: default
           toolchain: ${{ matrix.rust }}
-          override: true
-      - name: Build
-        run: cargo build --all-targets --features bin --verbose
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: "${{ matrix.runs-on }}-${{ matrix.rust }}"
+      - run: cargo check --all-targets --features bin --verbose
+      - run: cargo build --all-targets --features bin --verbose
+        # The next step will be cached by the CI cache.
+      - name: Install cargo-nextest
+        run: which cargo-nextest || cargo +stable install cargo-nextest
+      - run: cargo nextest run --verbose
 
-  library_msrv:
-    needs: build
+  # The lib is already transitively build above. Here, we only verify the MSRV.
+  build_library_msrv:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - uses: Swatinem/rust-cache@v2
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: default
-          toolchain: 1.57.0 # MSRV of library
-          override: true
+          toolchain: 1.57 # MSRV of the lib.
       - name: Build Lib as Dependency with MSRV
         run: cd ttfb-lib-msrv-check && cargo build --all-targets --verbose
 
   tests:
-    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: default
-          # Sufficient to execute tessts only with this version
-          # as we built them in the build-step with multiple versions.
           toolchain: stable
-          override: true
+      - uses: Swatinem/rust-cache@v2
       - name: Build
         run: cargo test --all-targets --verbose
 
-  network-tests:
-    needs: tests
+  network_tests:
     runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: --cfg network_tests
     steps:
       - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: default
-          # Sufficient to execute tessts only with this version
-          # as we built them in the build-step with multiple versions.
           toolchain: stable
-          override: true
+      - uses: Swatinem/rust-cache@v2
       - name: Run tests
-        run: RUSTFLAGS="--cfg network_tests" cargo test --verbose
+        run: cargo test --verbose
 
   style_checks:
-    needs: build
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust:
-          - stable
     steps:
       - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: default
-          toolchain: ${{ matrix.rust }}
-          override: true
-      - name: Rustfmt
-        run: cargo fmt -- --check
-      - name: Clippy
-        run: cargo clippy --all-targets
-      - name: Rustdoc
-        run: cargo doc --document-private-items
+          toolchain: stable
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt -- --check
+      - run: cargo clippy --all-targets
+      - run: cargo doc --document-private-items --no-deps
