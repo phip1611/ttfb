@@ -92,6 +92,9 @@ pub enum TtfbError {
     /// Can't establish HTTP/1.1-Connection.
     #[display(fmt = "Can't establish HTTP/1.1-Connection because: {}", _0)]
     CantConnectHttp(io::Error),
+    /// Didn't receive any data after sending the HTTP GET request.
+    #[display(fmt = "Didn't receive any data. Is the host running a HTTP server?")]
+    NoHttpResponse,
     /// There was a problem with the TCP stream.
     #[display(fmt = "There was a problem with the TCP stream because: {}", _0)]
     OtherStreamError(io::Error),
@@ -107,6 +110,7 @@ impl Error for TtfbError {
             TtfbError::OtherStreamError(err) => Some(err),
             TtfbError::CantVerifyTls(err) => Some(err),
             TtfbError::CantConnectHttp(err) => Some(err),
+            TtfbError::NoHttpResponse => None,
         }
     }
 }

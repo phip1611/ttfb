@@ -55,7 +55,7 @@ SOFTWARE.
 #![deny(rustdoc::all)]
 
 pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
-pub use outcome::{TtfbOutcome, DurationPair};
+pub use outcome::{DurationPair, TtfbOutcome};
 
 use native_tls::TlsConnector;
 use regex::Regex;
@@ -185,7 +185,7 @@ fn execute_http_get(
     let mut one_byte_buf = [0_u8];
     let now = Instant::now();
     tcp.read_exact(&mut one_byte_buf)
-        .map_err(TtfbError::CantConnectHttp)?;
+        .map_err(|_e| TtfbError::NoHttpResponse)?;
     let http_ttfb_duration = now.elapsed();
 
     // todo can lead to error, not every server responds with EOF
@@ -205,7 +205,6 @@ fn execute_http_get(
 
 /// Constructs the header for a HTTP/1.1 GET-Request.
 fn build_http11_header(url: &Url) -> String {
-    // with gzip, deflate, br we prevent
     format!(
         "GET {path} HTTP/1.1\r\n\
         Host: {host}\r\n\

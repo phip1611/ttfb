@@ -14,6 +14,7 @@
   - replaced `TtfbOutcome::http_ttfb_duration_rel` and `TtfbOutcome::http_ttfb_duration_abs`
     with `TtfbOutcome::ttfb_duration` which returns a `DurationPair`
 - dependencies updated
+- added `TtfbError::NoHttpResponse`
 
 # v1.6.0 (2023-01-26)
 - MSRV of the binary is now 1.64.0
