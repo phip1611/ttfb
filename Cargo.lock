@@ -494,17 +494,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "no-panic"
-version = "0.1.26"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71a6d126424f5ce0bb4587ff4561421d44aeede520541cc66f1bb912506ae46a"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.37",
-]
-
-[[package]]
 name = "num_cpus"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1094,7 +1083,6 @@ dependencies = [
  "clap",
  "crossterm",
  "derive_more",
- "no-panic",
  "regex",
  "rustls",
  "rustls-connector",

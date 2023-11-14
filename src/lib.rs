@@ -55,12 +55,11 @@ SOFTWARE.
 #![deny(rustdoc::all)]
 
 pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
-use no_panic::no_panic;
 pub use outcome::{DurationPair, TtfbOutcome};
 
 use regex::Regex;
 use rustls::client::{ServerCertVerified, ServerCertVerifier};
-use rustls::{Certificate, ClientConfig, RootCertStore};
+use rustls::{Certificate, ClientConfig};
 use rustls_connector::RustlsConnector;
 use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{IpAddr, TcpStream};
@@ -103,7 +102,6 @@ impl<T: IoRead + IoWrite> IoReadAndWrite for T {}
 ///
 /// ## Return value
 /// [`TtfbOutcome`] or [`TtfbError`].
-// #[no_panic]
 pub fn ttfb(input: String, allow_insecure_certificates: bool) -> Result<TtfbOutcome, TtfbError> {
     if input.is_empty() {
         return Err(TtfbError::InvalidUrl(InvalidUrlError::MissingInput));
@@ -136,7 +134,6 @@ pub fn ttfb(input: String, allow_insecure_certificates: bool) -> Result<TtfbOutc
 }
 
 /// Initializes the TCP connection to the IP address. Measures the duration.
-// #[no_panic]
 fn tcp_connect(addr: IpAddr, port: u16) -> Result<(TcpStream, Duration), TtfbError> {
     let addr_w_port = (addr, port);
     let now = Instant::now();
@@ -149,7 +146,6 @@ fn tcp_connect(addr: IpAddr, port: u16) -> Result<(TcpStream, Duration), TtfbErr
 /// If the scheme is "https", this replaces the TCP-Stream with a `TLS<TCP>`-stream.
 /// All data will be encrypted using the TLS-functionality of the crate `native-tls`.
 /// If TLS is used, it measures the time of the TLS handshake.
-// #[no_panic]
 fn tls_handshake_if_necessary(
     tcp: TcpStream,
     url: &Url,
@@ -203,7 +199,6 @@ impl ServerCertVerifier for AllowInvalidCertsVerifier {
 
 /// Executes the HTTP/1.1 GET-Request on the given socket. This works with TCP or `TLS<TCP>`.
 /// Afterwards, it waits for the first byte and measures all the times.
-// #[no_panic]
 fn execute_http_get(
     tcp: &mut Box<dyn IoReadAndWrite>,
     url: &Url,
@@ -236,7 +231,6 @@ fn execute_http_get(
 }
 
 /// Constructs the header for a HTTP/1.1 GET-Request.
-// #[no_panic]
 fn build_http11_header(url: &Url) -> String {
     format!(
         "GET {path} HTTP/1.1\r\n\
@@ -252,7 +246,6 @@ fn build_http11_header(url: &Url) -> String {
 }
 
 /// Parses the string input into an [`Url`] object.
-// #[no_panic]
 fn parse_input_as_url(input: &str) -> Result<Url, TtfbError> {
     Url::parse(input)
         .map_err(|e| TtfbError::InvalidUrl(InvalidUrlError::WrongFormat(e.to_string())))
@@ -260,7 +253,6 @@ fn parse_input_as_url(input: &str) -> Result<Url, TtfbError> {
 
 /// Prepends the default scheme "http://" is necessary. Without a scheme, [`parse_input_as_url`]
 /// will fail.
-// #[no_panic]
 fn prepend_default_scheme_if_necessary(url: String) -> String {
     let regex = Regex::new("^(?P<scheme>.*://)?").unwrap();
     let captures = regex.captures(&url);
@@ -274,7 +266,6 @@ fn prepend_default_scheme_if_necessary(url: String) -> String {
 }
 
 /// Assert the scheme is on the allow list. Currently, we only allow "http" and "https".
-// #[no_panic]
 fn assert_scheme_is_allowed(url: &Url) -> Result<(), TtfbError> {
     let allowed_scheme = url.scheme() == "http" || url.scheme() == "https";
     if allowed_scheme {
@@ -287,7 +278,6 @@ fn assert_scheme_is_allowed(url: &Url) -> Result<(), TtfbError> {
 /// Checks from the URL if we already have an IP address or not.
 /// If the user gave us a domain name, we resolve it using the [`trust-dns-resolver`]
 /// crate and measure the time for it.
-// #[no_panic]
 fn resolve_dns_if_necessary(url: &Url) -> Result<(IpAddr, Option<Duration>), TtfbError> {
     Ok(if url.domain().is_none() {
         let mut ip_str = url.host_str().unwrap();
@@ -305,7 +295,6 @@ fn resolve_dns_if_necessary(url: &Url) -> Result<(IpAddr, Option<Duration>), Ttf
 
 /// Actually resolves a domain using the systems default DNS resolver.
 /// Helper function for [`resolve_dns_if_necessary`].
-// #[no_panic]
 fn resolve_dns(url: &Url) -> Result<(IpAddr, Duration), TtfbError> {
     // Construct a new DNS Resolver
     // On Unix/Posix systems, this will read: /etc/resolv.conf
