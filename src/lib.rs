@@ -406,7 +406,7 @@ mod tests {
 
 /// Tests that rely on an external network connection.
 /// Sort of integration tests.
-#[cfg(test)]
+#[cfg(all(test, network_tests))]
 mod network_tests {
     use super::*;
 
