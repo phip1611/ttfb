@@ -1,3 +1,12 @@
+# Unreleased (Yet)
+
+# v1.8.0 (2023-11-14)
+- `ttfb` can no longer panic when `resolv.conf` cannot be found:
+  Huge thanks to _Firaenix_: https://github.com/phip1611/ttfb/pull/26
+- **BREAKING** `TtfbError::CantConnectTls`'s inner type has switched from
+  `native_tls::Error` to `rustls_connector::HandshakeError<std::net::TcpStream>`
+- **MAYBE BREAKING** Introduced new `TtfbError::CantConfigureDNSError` variant
+
 # v1.7.0 (2023-09-22)
 - **BREAKING** The MSRV of the library is `1.64.0` stable.
 - **BREAKING** The MSRV of the binary is `1.70.0` stable.
