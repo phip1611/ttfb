@@ -26,12 +26,23 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: "${{ matrix.runs-on }}-${{ matrix.rust }}"
-      - run: cargo check --all-targets --features bin --verbose
-      - run: cargo build --all-targets --features bin --verbose
-        # The next step will be cached by the CI cache.
+      - name: cargo check (debug)
+        run: cargo check --all-targets --features bin --verbose
+      - name: cargo check (release)
+        run: cargo check --all-targets --features bin --verbose --release
+      - name: cargo build (debug)
+        run: cargo build --all-targets --features bin --verbose
+      - name: cargo build (release)
+        run: cargo build --all-targets --features bin --verbose --release
+      # The next step will be cached by the CI cache.
       - name: Install cargo-nextest
         run: which cargo-nextest || cargo +stable install cargo-nextest
       - run: cargo nextest run --verbose
+      # Test that we don't segfault or so because of the LTO.
+      - name: "CLI [release]: ttfb --help"
+        run: cargo run --release --features bin -- --help
+      - name: "CLI [release]: ttfb github.com"
+        run: cargo run --release --features bin -- github.com
 
   # The lib is already transitively build above. Here, we only verify the MSRV.
   build_library_msrv:

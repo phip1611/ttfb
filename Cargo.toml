@@ -17,6 +17,11 @@ documentation = "https://docs.rs/ttfb"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true
+
 [[bin]]
 name = "ttfb"
 required-features = ["bin"]
@@ -34,7 +39,6 @@ trust-dns-resolver = { version = "0.23.0", features = ["dns-over-rustls"] }
 rustls = { version = "0.21.8", features = ["dangerous_configuration"] }
 rustls-connector = { version = "0.18.3", features = [
   "rustls-native-certs",
-  "dangerous-configuration",
   "webpki-roots",
   "webpki-roots-certs",
 ] }
