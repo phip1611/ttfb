@@ -6,6 +6,8 @@
 - **BREAKING** `TtfbError::CantConnectTls`'s inner type has switched from
   `native_tls::Error` to `rustls_connector::HandshakeError<std::net::TcpStream>`
 - **MAYBE BREAKING** Introduced new `TtfbError::CantConfigureDNSError` variant
+- The binary is now smaller; it is stripped and uses LTO. This shrinks the size
+  from roughly 14MiB to 4MiB (release build).
 
 # v1.7.0 (2023-09-22)
 - **BREAKING** The MSRV of the library is `1.64.0` stable.
