@@ -86,7 +86,7 @@ pub enum TtfbError {
     /// Can't establish TLS-Connection.
     #[display(fmt = "Can't establish TLS-Connection because: {}", _0)]
     CantConnectTls(rustls_connector::HandshakeError<std::net::TcpStream>),
-    /// Can't verify a TLS-Connection
+    /// Can't verify TLS-Connection.
     #[display(fmt = "Can't verify TLS-Connection because: {}", _0)]
     CantVerifyTls(HandshakeError<TcpStream>),
     /// Can't establish HTTP/1.1-Connection.
@@ -98,7 +98,7 @@ pub enum TtfbError {
     /// There was a problem with the TCP stream.
     #[display(fmt = "There was a problem with the TCP stream because: {}", _0)]
     OtherStreamError(io::Error),
-    /// Can't configure trust-dns-resolver configuration
+    /// Can't configure trust-dns-resolver configuration.
     #[display(fmt = "Failed to configure DNS based on system or default settings: {_0}")]
     CantConfigureDNSError(io::Error),
 }

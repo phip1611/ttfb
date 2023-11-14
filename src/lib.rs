@@ -298,13 +298,9 @@ fn resolve_dns_if_necessary(url: &Url) -> Result<(IpAddr, Option<Duration>), Ttf
 fn resolve_dns(url: &Url) -> Result<(IpAddr, Duration), TtfbError> {
     // Construct a new DNS Resolver
     // On Unix/Posix systems, this will read: /etc/resolv.conf
-    let resolver = match DnsResolver::from_system_conf() {
-        Ok(v) => v,
-        Err(_) => {
-            // We failed to read from system config for some reason, fall back to trust dns default?
-            DnsResolver::default().map_err(TtfbError::CantConfigureDNSError)?
-        }
-    };
+    let resolver = DnsResolver::from_system_conf()
+        .map_or_else(|_| DnsResolver::default(), Ok)
+        .map_err(TtfbError::CantConfigureDNSError)?;
     let begin = Instant::now();
 
     // at least on Linux this gets cached somehow in the background
