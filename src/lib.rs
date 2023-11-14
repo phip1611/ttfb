@@ -296,11 +296,14 @@ fn resolve_dns_if_necessary(url: &Url) -> Result<(IpAddr, Option<Duration>), Ttf
 /// Actually resolves a domain using the systems default DNS resolver.
 /// Helper function for [`resolve_dns_if_necessary`].
 fn resolve_dns(url: &Url) -> Result<(IpAddr, Duration), TtfbError> {
-    // Construct a new DNS Resolver
+    // Construct a new DNS Resolver.
     // On Unix/Posix systems, this will read: /etc/resolv.conf
+    // In the end, this uses the name server of the system or falls back to
+    // the library's default (usually Google DNS).
     let resolver = DnsResolver::from_system_conf()
-        .map_or_else(|_| DnsResolver::default(), Ok)
+        .or_else(|_| DnsResolver::default())
         .map_err(TtfbError::CantConfigureDNSError)?;
+
     let begin = Instant::now();
 
     // at least on Linux this gets cached somehow in the background
