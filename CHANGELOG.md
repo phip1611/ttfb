@@ -8,6 +8,7 @@
 - **MAYBE BREAKING** Introduced new `TtfbError::CantConfigureDNSError` variant
 - The binary is now smaller; it is stripped and uses LTO. This shrinks the size
   from roughly 14MiB to 4MiB (release build).
+- The binary no longer depends on `openssl` but only on `rustls`
 
 # v1.7.0 (2023-09-22)
 - **BREAKING** The MSRV of the library is `1.64.0` stable.
