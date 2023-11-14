@@ -24,7 +24,7 @@ SOFTWARE.
 //! Module for [`TtfbError`].
 
 use derive_more::Display;
-use native_tls::HandshakeError;
+use rustls_connector::HandshakeError;
 use std::error::Error;
 use std::io;
 use std::net::TcpStream;
@@ -85,7 +85,7 @@ pub enum TtfbError {
     CantConnectTcp(io::Error),
     /// Can't establish TLS-Connection.
     #[display(fmt = "Can't establish TLS-Connection because: {}", _0)]
-    CantConnectTls(native_tls::Error),
+    CantConnectTls(rustls_connector::HandshakeError<std::net::TcpStream>),
     /// Can't verify TLS-Connection.
     #[display(fmt = "Can't verify TLS-Connection because: {}", _0)]
     CantVerifyTls(HandshakeError<TcpStream>),
@@ -98,6 +98,9 @@ pub enum TtfbError {
     /// There was a problem with the TCP stream.
     #[display(fmt = "There was a problem with the TCP stream because: {}", _0)]
     OtherStreamError(io::Error),
+    /// Can't configure trust-dns-resolver configuration.
+    #[display(fmt = "Failed to configure DNS based on system or default settings: {_0}")]
+    CantConfigureDNSError(io::Error),
 }
 
 impl Error for TtfbError {
@@ -108,9 +111,10 @@ impl Error for TtfbError {
             TtfbError::CantConnectTls(err) => Some(err),
             TtfbError::CantConnectTcp(err) => Some(err),
             TtfbError::OtherStreamError(err) => Some(err),
-            TtfbError::CantVerifyTls(err) => Some(err),
             TtfbError::CantConnectHttp(err) => Some(err),
             TtfbError::NoHttpResponse => None,
+            TtfbError::CantConfigureDNSError(err) => Some(err),
+            TtfbError::CantVerifyTls(err) => Some(err),
         }
     }
 }

@@ -57,11 +57,14 @@ SOFTWARE.
 pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
 pub use outcome::{DurationPair, TtfbOutcome};
 
-use native_tls::TlsConnector;
 use regex::Regex;
+use rustls::client::{ServerCertVerified, ServerCertVerifier};
+use rustls::{Certificate, ClientConfig};
+use rustls_connector::RustlsConnector;
 use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{IpAddr, TcpStream};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use trust_dns_resolver::Resolver as DnsResolver;
 use url::Url;
@@ -149,17 +152,23 @@ fn tls_handshake_if_necessary(
     allow_insecure_certificates: bool,
 ) -> Result<(Box<dyn IoReadAndWrite>, Option<Duration>), TtfbError> {
     if url.scheme() == "https" {
-        let tls = TlsConnector::builder()
-            .danger_accept_invalid_hostnames(allow_insecure_certificates)
-            .danger_accept_invalid_certs(allow_insecure_certificates)
-            .build()
-            .map_err(TtfbError::CantConnectTls)?;
+        let connector: RustlsConnector = if allow_insecure_certificates {
+            ClientConfig::builder()
+                .with_safe_defaults()
+                .with_custom_certificate_verifier(Arc::new(AllowInvalidCertsVerifier))
+                .with_no_client_auth()
+                .into()
+        } else {
+            RustlsConnector::new_with_native_certs()
+                .map_or_else(|_| RustlsConnector::new_with_webpki_roots_certs(), |v| v)
+        };
         let now = Instant::now();
+
         // hostname not used for DNS, only for certificate validation
         // can also be a IP address, because Certificates can have the IP-Address in
         // the "cert subject alternative name" field.
         let certificate_host = url.host_str().unwrap_or("");
-        let mut stream = tls
+        let mut stream = connector
             .connect(certificate_host, tcp)
             .map_err(TtfbError::CantVerifyTls)?;
         stream.flush().map_err(TtfbError::OtherStreamError)?;
@@ -167,6 +176,24 @@ fn tls_handshake_if_necessary(
         Ok((Box::new(stream), Some(tls_handshake_duration)))
     } else {
         Ok((Box::new(tcp), None))
+    }
+}
+
+/// Custom verifier that allows invalid certificates.
+#[derive(Debug)]
+pub struct AllowInvalidCertsVerifier;
+
+impl ServerCertVerifier for AllowInvalidCertsVerifier {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &Certificate,
+        _intermediates: &[Certificate],
+        _server_name: &rustls::ServerName,
+        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _ocsp_response: &[u8],
+        _now: std::time::SystemTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        Ok(ServerCertVerified::assertion())
     }
 }
 
@@ -271,7 +298,9 @@ fn resolve_dns_if_necessary(url: &Url) -> Result<(IpAddr, Option<Duration>), Ttf
 fn resolve_dns(url: &Url) -> Result<(IpAddr, Duration), TtfbError> {
     // Construct a new DNS Resolver
     // On Unix/Posix systems, this will read: /etc/resolv.conf
-    let resolver = DnsResolver::from_system_conf().unwrap();
+    let resolver = DnsResolver::from_system_conf()
+        .map_or_else(|_| DnsResolver::default(), Ok)
+        .map_err(TtfbError::CantConfigureDNSError)?;
     let begin = Instant::now();
 
     // at least on Linux this gets cached somehow in the background
@@ -394,18 +423,68 @@ mod network_tests {
     }
 
     #[test]
-    fn test_against_external_services() {
+    fn test_http_dns_lookup_duration() {
         let r = ttfb("http://phip1611.de".to_string(), false).unwrap();
         assert!(r.dns_lookup_duration().is_some());
+    }
+
+    #[test]
+    fn test_http_no_tls_handshake() {
+        let r = ttfb("http://phip1611.de".to_string(), false).unwrap();
         assert!(r.tls_handshake_duration().is_none());
+    }
+
+    #[test]
+    fn test_https_dns_lookup_duration() {
         let r = ttfb("https://phip1611.de".to_string(), false).unwrap();
         assert!(r.dns_lookup_duration().is_some());
+    }
+
+    #[test]
+    fn test_https_tls_handshake_duration() {
+        let r = ttfb("https://phip1611.de".to_string(), false).unwrap();
         assert!(r.tls_handshake_duration().is_some());
+    }
+
+    #[test]
+    fn test_https_expired_certificate_error() {
         let r = ttfb("https://expired.badssl.com".to_string(), false);
         assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_https_expired_certificate_ignore_error() {
         let r = ttfb("https://expired.badssl.com".to_string(), true).unwrap();
         assert!(r.dns_lookup_duration().is_some());
+    }
+
+    #[test]
+    fn test_https_self_signed_certificate_error() {
+        let r = ttfb("https://self-signed.badssl.com".to_string(), false);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_https_self_signed_certificate_ignore_error() {
+        let r = ttfb("https://self-signed.badssl.com".to_string(), true).unwrap();
+        assert!(r.dns_lookup_duration().is_some());
+    }
+
+    #[test]
+    fn test_https_wrong_host_certificate_error() {
+        let r = ttfb("https://wrong.host.badssl.com".to_string(), false);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_https_wrong_host_certificate_ignore_error() {
+        let r = ttfb("https://wrong.host.badssl.com".to_string(), true).unwrap();
+        assert!(r.dns_lookup_duration().is_some());
         assert!(r.tls_handshake_duration().is_some());
+    }
+
+    #[test]
+    fn test_https_ip_address_tls_handshake() {
         let r = ttfb("https://1.1.1.1".to_string(), false).unwrap();
         assert!(
             r.tls_handshake_duration().is_some(),
