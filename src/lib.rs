@@ -55,10 +55,11 @@ SOFTWARE.
 #![deny(rustdoc::all)]
 
 pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
+use no_panic::no_panic;
 pub use outcome::{DurationPair, TtfbOutcome};
 
-use native_tls::TlsConnector;
 use regex::Regex;
+use rustls_connector::RustlsConnector;
 use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{IpAddr, TcpStream};
 use std::str::FromStr;
@@ -99,6 +100,7 @@ impl<T: IoRead + IoWrite> IoReadAndWrite for T {}
 ///
 /// ## Return value
 /// [`TtfbOutcome`] or [`TtfbError`].
+// #[no_panic]
 pub fn ttfb(input: String, allow_insecure_certificates: bool) -> Result<TtfbOutcome, TtfbError> {
     if input.is_empty() {
         return Err(TtfbError::InvalidUrl(InvalidUrlError::MissingInput));
@@ -131,6 +133,7 @@ pub fn ttfb(input: String, allow_insecure_certificates: bool) -> Result<TtfbOutc
 }
 
 /// Initializes the TCP connection to the IP address. Measures the duration.
+// #[no_panic]
 fn tcp_connect(addr: IpAddr, port: u16) -> Result<(TcpStream, Duration), TtfbError> {
     let addr_w_port = (addr, port);
     let now = Instant::now();
@@ -143,23 +146,22 @@ fn tcp_connect(addr: IpAddr, port: u16) -> Result<(TcpStream, Duration), TtfbErr
 /// If the scheme is "https", this replaces the TCP-Stream with a `TLS<TCP>`-stream.
 /// All data will be encrypted using the TLS-functionality of the crate `native-tls`.
 /// If TLS is used, it measures the time of the TLS handshake.
+// #[no_panic]
 fn tls_handshake_if_necessary(
     tcp: TcpStream,
     url: &Url,
     allow_insecure_certificates: bool,
 ) -> Result<(Box<dyn IoReadAndWrite>, Option<Duration>), TtfbError> {
     if url.scheme() == "https" {
-        let tls = TlsConnector::builder()
-            .danger_accept_invalid_hostnames(allow_insecure_certificates)
-            .danger_accept_invalid_certs(allow_insecure_certificates)
-            .build()
-            .map_err(TtfbError::CantConnectTls)?;
+        let connector = RustlsConnector::new_with_native_certs()
+            .map_or_else(|_| RustlsConnector::new_with_webpki_roots_certs(), |v| v);
         let now = Instant::now();
+
         // hostname not used for DNS, only for certificate validation
         // can also be a IP address, because Certificates can have the IP-Address in
         // the "cert subject alternative name" field.
         let certificate_host = url.host_str().unwrap_or("");
-        let mut stream = tls
+        let mut stream = connector
             .connect(certificate_host, tcp)
             .map_err(TtfbError::CantVerifyTls)?;
         stream.flush().map_err(TtfbError::OtherStreamError)?;
@@ -172,6 +174,7 @@ fn tls_handshake_if_necessary(
 
 /// Executes the HTTP/1.1 GET-Request on the given socket. This works with TCP or `TLS<TCP>`.
 /// Afterwards, it waits for the first byte and measures all the times.
+// #[no_panic]
 fn execute_http_get(
     tcp: &mut Box<dyn IoReadAndWrite>,
     url: &Url,
@@ -204,6 +207,7 @@ fn execute_http_get(
 }
 
 /// Constructs the header for a HTTP/1.1 GET-Request.
+// #[no_panic]
 fn build_http11_header(url: &Url) -> String {
     format!(
         "GET {path} HTTP/1.1\r\n\
@@ -219,6 +223,7 @@ fn build_http11_header(url: &Url) -> String {
 }
 
 /// Parses the string input into an [`Url`] object.
+// #[no_panic]
 fn parse_input_as_url(input: &str) -> Result<Url, TtfbError> {
     Url::parse(input)
         .map_err(|e| TtfbError::InvalidUrl(InvalidUrlError::WrongFormat(e.to_string())))
@@ -226,6 +231,7 @@ fn parse_input_as_url(input: &str) -> Result<Url, TtfbError> {
 
 /// Prepends the default scheme "http://" is necessary. Without a scheme, [`parse_input_as_url`]
 /// will fail.
+// #[no_panic]
 fn prepend_default_scheme_if_necessary(url: String) -> String {
     let regex = Regex::new("^(?P<scheme>.*://)?").unwrap();
     let captures = regex.captures(&url);
@@ -239,6 +245,7 @@ fn prepend_default_scheme_if_necessary(url: String) -> String {
 }
 
 /// Assert the scheme is on the allow list. Currently, we only allow "http" and "https".
+// #[no_panic]
 fn assert_scheme_is_allowed(url: &Url) -> Result<(), TtfbError> {
     let allowed_scheme = url.scheme() == "http" || url.scheme() == "https";
     if allowed_scheme {
@@ -251,6 +258,7 @@ fn assert_scheme_is_allowed(url: &Url) -> Result<(), TtfbError> {
 /// Checks from the URL if we already have an IP address or not.
 /// If the user gave us a domain name, we resolve it using the [`trust-dns-resolver`]
 /// crate and measure the time for it.
+// #[no_panic]
 fn resolve_dns_if_necessary(url: &Url) -> Result<(IpAddr, Option<Duration>), TtfbError> {
     Ok(if url.domain().is_none() {
         let mut ip_str = url.host_str().unwrap();
@@ -268,10 +276,17 @@ fn resolve_dns_if_necessary(url: &Url) -> Result<(IpAddr, Option<Duration>), Ttf
 
 /// Actually resolves a domain using the systems default DNS resolver.
 /// Helper function for [`resolve_dns_if_necessary`].
+// #[no_panic]
 fn resolve_dns(url: &Url) -> Result<(IpAddr, Duration), TtfbError> {
     // Construct a new DNS Resolver
     // On Unix/Posix systems, this will read: /etc/resolv.conf
-    let resolver = DnsResolver::from_system_conf().unwrap();
+    let resolver = match DnsResolver::from_system_conf() {
+        Ok(v) => v,
+        Err(_) => {
+            // We failed to read from system config for some reason, fall back to trust dns default?
+            DnsResolver::default().map_err(TtfbError::CantConfigureDNSError)?
+        }
+    };
     let begin = Instant::now();
 
     // at least on Linux this gets cached somehow in the background
@@ -373,7 +388,7 @@ mod tests {
 
 /// Tests that rely on an external network connection.
 /// Sort of integration tests.
-#[cfg(all(test, network_tests))]
+#[cfg(test)]
 mod network_tests {
     use super::*;
 
@@ -404,6 +419,14 @@ mod network_tests {
         let r = ttfb("https://expired.badssl.com".to_string(), false);
         assert!(r.is_err());
         let r = ttfb("https://expired.badssl.com".to_string(), true).unwrap();
+        assert!(r.dns_lookup_duration().is_some());
+        let r = ttfb("https://self-signed.badssl.com".to_string(), false);
+        assert!(r.is_err());
+        let r = ttfb("https://self-signed.badssl.com".to_string(), true).unwrap();
+        assert!(r.dns_lookup_duration().is_some());
+        let r = ttfb("https://wrong.host.badssl.com".to_string(), false);
+        assert!(r.is_err());
+        let r = ttfb("https://wrong.host.badssl.com".to_string(), true).unwrap();
         assert!(r.dns_lookup_duration().is_some());
         assert!(r.tls_handshake_duration().is_some());
         let r = ttfb("https://1.1.1.1".to_string(), false).unwrap();
