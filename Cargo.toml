@@ -48,7 +48,7 @@ derive_more = { version = "0.99.17", default-features = false, features = [
 ] }
 # nice abstraction of URL
 url = "2.4.1"
-regex = "~1.9.5"
+regex = "^1.9.5"
 
 # +++ BINARY +++
 # used for the binary, not the lib
