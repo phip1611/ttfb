@@ -5,7 +5,7 @@ Library + CLI-Tool to measure the TTFB (time to first byte) of HTTP(S) requests.
 Additionally, this crate measures the times of DNS lookup, TCP connect, and
 TLS handshake.
 """
-version = "1.8.0"
+version = "1.9.0"
 edition = "2021"
 keywords = ["ttfb", "http", "timings", "web"]
 categories = ["network-programming", "command-line-utilities"]
@@ -36,19 +36,19 @@ bin = ["clap", "crossterm"]
 # DNS over systems default DNS resolver
 trust-dns-resolver = { version = "0.23.0", features = ["dns-over-rustls"] }
 # TLS handshake
-rustls = { version = "0.21.8", features = ["dangerous_configuration"] }
-rustls-connector = { version = "0.18.3", features = [
+rustls = { version = "0.21.0", features = ["dangerous_configuration"] }
+rustls-connector = { version = "0.18.0", features = [
   "rustls-native-certs",
   "webpki-roots",
   "webpki-roots-certs",
 ] }
 # automatic Display impl for enums
-derive_more = { version = "0.99.17", default-features = false, features = [
+derive_more = { version = "0.99.0", default-features = false, features = [
   "display",
 ] }
 # nice abstraction of URL
-url = "2.4.1"
-regex = "~1.9.5"
+url = "2.5.0"
+regex = "1.10.0"
 
 # +++ BINARY +++
 # used for the binary, not the lib
@@ -59,7 +59,7 @@ version = "0.27.0"
 # CLI args parsing
 [dependencies.clap]
 optional = true
-version = "~4.4.4"
+version = "4.4.0"
 features = [
   "std",
   "color",

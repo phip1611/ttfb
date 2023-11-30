@@ -1,5 +1,10 @@
 # Unreleased (Yet)
 
+# v1.9.0 (2023-11-30)
+
+- **BREAKING** The MSRV of the library is `1.65.0` stable.
+- The dependency requirements are now less strict.
+
 # v1.8.0 (2023-11-14)
 - `ttfb` can no longer panic when `resolv.conf` cannot be found:
   Huge thanks to _Firaenix_: https://github.com/phip1611/ttfb/pull/26
