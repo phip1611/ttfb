@@ -68,11 +68,12 @@ macro_rules! unwrap_or_exit {
 /// CLI Arguments for `clap`.
 #[derive(Parser, Debug)]
 #[command(
-    author,
     version,
-    about = "CLI utility to measure the TTFB (time to first byte) of HTTP(S) requests. \
-        Additionally, this crate measures the relative and absolute times of DNS \
-        lookup, TCP connect, and TLS handshake."
+    about = "CLI utility to measure the TTFB (time to first byte) of HTTP(S) \
+    requests. This includes data of intermediate steps, such as the relative \
+    and absolute timings of DNS lookup, TCP connect, and TLS handshake. \
+    \n\n\
+    For issues or merge requests, please visit https://github.com/phip1611/ttfb."
 )]
 struct TtfbArgs {
     /// Name of the host. An IP address or a URL. "https://"-prefix must be provided for HTTPS/TLS.

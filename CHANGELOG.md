@@ -1,5 +1,9 @@
 # Unreleased (Yet)
 
+# v1.9.1 (2023-11-30)
+
+- Improved `--help`.
+
 # v1.9.0 (2023-11-30)
 
 - **BREAKING** The MSRV of the library is `1.65.0` stable.
