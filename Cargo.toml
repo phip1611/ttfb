@@ -41,7 +41,7 @@ bin = ["clap", "crossterm"]
 trust-dns-resolver = { version = "0.23.0", features = ["dns-over-rustls"] }
 # TLS handshake
 rustls = { version = "0.21.0", features = ["dangerous_configuration"] }
-rustls-connector = { version = "0.18.0", features = [
+rustls-connector = { version = "0.19.2", features = [
   "rustls-native-certs",
   "webpki-roots",
   "webpki-roots-certs",
