@@ -86,7 +86,7 @@ impl<T: IoRead + IoWrite> IoReadAndWrite for T {}
 /// content.
 ///
 /// ## Parameters
-/// - `input`: Url. Can be one of
+/// - `input`: URL pointing to a HTTP server. Can be one of
 ///   - `phip1611.de` (defaults to `http://`)
 ///   - `http://phip1611.de`
 ///   - `https://phip1611.de`
@@ -96,8 +96,9 @@ impl<T: IoRead + IoWrite> IoReadAndWrite for T {}
 ///   - `https://1.1.1.1`
 ///   - `12.34.56.78/foobar` (defaults to `http://`)
 ///   - `12.34.56.78` (defaults to `http://`)
-/// - `allow_insecure_certificates`: if illegal certificates (untrusted, expired) should be accepted
-///                                  when https is used. Similar to `-k/--insecure` in `curl`.
+/// - `allow_insecure_certificates`: if illegal certificates (untrusted,
+///   expired) should be accepted when https is used. Similar to
+///   `-k/--insecure` in `curl`.
 ///
 /// ## Return value
 /// [`TtfbOutcome`] or [`TtfbError`].
@@ -112,7 +113,8 @@ pub fn ttfb(
     let input = input.to_string();
     let input = prepend_default_scheme_if_necessary(input);
     let url = parse_input_as_url(&input)?;
-    assert_scheme_is_allowed(&url)?;
+    // println!("final url: {}", url);
+    check_scheme_is_allowed(&url)?;
 
     let (addr, dns_duration) = resolve_dns_if_necessary(&url)?;
     let port = url.port_or_known_default().unwrap();
@@ -260,15 +262,16 @@ fn prepend_default_scheme_if_necessary(url: String) -> String {
     const SCHEME_SEPARATOR: &str = "://";
     const DEFAULT_SCHEME: &str = "http";
 
-    format!("http://{}", url)
     (!url.contains(SCHEME_SEPARATOR))
         .then(|| format!("{DEFAULT_SCHEME}://{url}"))
         .unwrap_or(url)
 }
 
-/// Assert the scheme is on the allow list. Currently, we only allow "http" and "https".
-fn assert_scheme_is_allowed(url: &Url) -> Result<(), TtfbError> {
-    let allowed_scheme = url.scheme() == "http" || url.scheme() == "https";
+/// Checks the scheme is on the allow list. Currently, we only allow "http"
+/// and "https".
+fn check_scheme_is_allowed(url: &Url) -> Result<(), TtfbError> {
+    let actual_scheme = url.scheme();
+    let allowed_scheme = actual_scheme == "http" || actual_scheme == "https";
     if allowed_scheme {
         Ok(())
     } else {
@@ -382,21 +385,21 @@ mod tests {
 
     #[test]
     fn test_check_scheme() {
-        assert_scheme_is_allowed(
+        check_scheme_is_allowed(
             &Url::from_str(&prepend_default_scheme_if_necessary(
                 "phip1611.de".to_owned(),
             ))
             .unwrap(),
         )
         .expect("must accept http");
-        assert_scheme_is_allowed(
+        check_scheme_is_allowed(
             &Url::from_str(&prepend_default_scheme_if_necessary(
                 "https://phip1611.de".to_owned(),
             ))
             .unwrap(),
         )
         .expect("must accept http");
-        assert_scheme_is_allowed(
+        check_scheme_is_allowed(
             &Url::from_str(&prepend_default_scheme_if_necessary(
                 "ftp://phip1611.de".to_owned(),
             ))
