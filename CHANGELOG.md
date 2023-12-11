@@ -9,7 +9,7 @@
 
 ## ttfb binary
 
-- reduced binary size from 4.5MB to 3MB (release)
+- reduced binary size from 4.5MB to 3.5MB (release)
 
 
 # v1.9.1 (2023-11-30)
