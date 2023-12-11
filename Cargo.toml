@@ -52,7 +52,6 @@ derive_more = { version = "0.99.0", default-features = false, features = [
 ] }
 # nice abstraction of URL
 url = "2.5.0"
-regex = "1.10.0"
 
 # +++ BINARY +++
 # used for the binary, not the lib

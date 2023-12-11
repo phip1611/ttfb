@@ -57,7 +57,6 @@ SOFTWARE.
 pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
 pub use outcome::{DurationPair, TtfbOutcome};
 
-use regex::Regex;
 use rustls::client::{ServerCertVerified, ServerCertVerifier};
 use rustls::{Certificate, ClientConfig};
 use rustls_connector::RustlsConnector;
@@ -82,9 +81,9 @@ trait IoReadAndWrite: IoWrite + IoRead {}
 
 impl<T: IoRead + IoWrite> IoReadAndWrite for T {}
 
-/// Takes a URL and connects to it via http/1.1. Measures time for
-/// DNS lookup, TCP connection start, TLS handshake, and TTFB (Time to First Byte)
-/// of HTML content.
+/// Takes a URL and connects to it via http/1.1. Measures time for DNS lookup,
+/// TCP connection start, TLS handshake, and TTFB (Time to First Byte) of HTML
+/// content.
 ///
 /// ## Parameters
 /// - `input`: Url. Can be one of
@@ -251,18 +250,15 @@ fn parse_input_as_url(input: &str) -> Result<Url, TtfbError> {
         .map_err(|e| TtfbError::InvalidUrl(InvalidUrlError::WrongFormat(e.to_string())))
 }
 
-/// Prepends the default scheme "http://" is necessary. Without a scheme, [`parse_input_as_url`]
-/// will fail.
+/// Prepends the default scheme `http://` is necessary to the user input.
 fn prepend_default_scheme_if_necessary(url: String) -> String {
-    let regex = Regex::new("^(?P<scheme>.*://)?").unwrap();
-    let captures = regex.captures(&url);
-    if let Some(captures) = captures {
-        if captures.name("scheme").is_some() {
-            return url;
-        }
-    }
+    const SCHEME_SEPARATOR: &str = "://";
+    const DEFAULT_SCHEME: &str = "http";
 
     format!("http://{}", url)
+    (!url.contains(SCHEME_SEPARATOR))
+        .then(|| format!("{DEFAULT_SCHEME}://{url}"))
+        .unwrap_or(url)
 }
 
 /// Assert the scheme is on the allow list. Currently, we only allow "http" and "https".
