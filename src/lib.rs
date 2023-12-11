@@ -267,7 +267,9 @@ fn assert_scheme_is_allowed(url: &Url) -> Result<(), TtfbError> {
     if allowed_scheme {
         Ok(())
     } else {
-        Err(TtfbError::InvalidUrl(InvalidUrlError::WrongScheme))
+        Err(TtfbError::InvalidUrl(InvalidUrlError::WrongScheme(
+            actual_scheme.to_string(),
+        )))
     }
 }
 
