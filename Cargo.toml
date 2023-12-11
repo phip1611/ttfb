@@ -5,9 +5,9 @@ Library + CLI utility to measure the TTFB (time to first byte) of HTTP(S)
 requests. This includes data of intermediate steps, such as the relative and
 absolute timings of DNS lookup, TCP connect, and TLS handshake.
 """
-version = "1.9.1"
+version = "1.10.0"
 edition = "2021"
-rust-version = "1.65" # MSRV of the library
+rust-version = "1.65" # MSRV of the library (the MSRV that is smaller)
 keywords = ["ttfb", "http", "timings", "web"]
 categories = ["network-programming", "command-line-utilities"]
 readme = "README.md"
