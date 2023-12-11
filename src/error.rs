@@ -61,9 +61,9 @@ pub enum InvalidUrlError {
     /// The URL is illegal.
     #[display(fmt = "The URL is illegal because: {}", _0)]
     WrongFormat(String),
-    /// This tools only supports http and https.
-    #[display(fmt = "This tools only supports http and https.")]
-    WrongScheme,
+    /// Wrong scheme. Only supports http and https.
+    #[display(fmt = "Wrong scheme '{}://': Only supports http and https.", _0)]
+    WrongScheme(String),
     /// Other unknown error.
     #[display(fmt = "Other unknown error.")]
     Other,

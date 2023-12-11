@@ -57,9 +57,9 @@ SOFTWARE.
 pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
 pub use outcome::{DurationPair, TtfbOutcome};
 
-use regex::Regex;
-use rustls::client::{ServerCertVerified, ServerCertVerifier};
-use rustls::{Certificate, ClientConfig};
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::{ClientConfig, DigitallySignedStruct, Error, SignatureScheme};
 use rustls_connector::RustlsConnector;
 use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{IpAddr, TcpStream};
@@ -82,12 +82,12 @@ trait IoReadAndWrite: IoWrite + IoRead {}
 
 impl<T: IoRead + IoWrite> IoReadAndWrite for T {}
 
-/// Takes a URL and connects to it via http/1.1. Measures time for
-/// DNS lookup, TCP connection start, TLS handshake, and TTFB (Time to First Byte)
-/// of HTML content.
+/// Takes a URL and connects to it via http/1.1. Measures time for DNS lookup,
+/// TCP connection start, TLS handshake, and TTFB (Time to First Byte) of HTML
+/// content.
 ///
 /// ## Parameters
-/// - `input`: Url. Can be one of
+/// - `input`: URL pointing to a HTTP server. Can be one of
 ///   - `phip1611.de` (defaults to `http://`)
 ///   - `http://phip1611.de`
 ///   - `https://phip1611.de`
@@ -97,18 +97,25 @@ impl<T: IoRead + IoWrite> IoReadAndWrite for T {}
 ///   - `https://1.1.1.1`
 ///   - `12.34.56.78/foobar` (defaults to `http://`)
 ///   - `12.34.56.78` (defaults to `http://`)
-/// - `allow_insecure_certificates`: if illegal certificates (untrusted, expired) should be accepted
-///                                  when https is used. Similar to `-k/--insecure` in `curl`.
+/// - `allow_insecure_certificates`: if illegal certificates (untrusted,
+///   expired) should be accepted when https is used. Similar to
+///   `-k/--insecure` in `curl`.
 ///
 /// ## Return value
 /// [`TtfbOutcome`] or [`TtfbError`].
-pub fn ttfb(input: String, allow_insecure_certificates: bool) -> Result<TtfbOutcome, TtfbError> {
+pub fn ttfb(
+    input: impl AsRef<str>,
+    allow_insecure_certificates: bool,
+) -> Result<TtfbOutcome, TtfbError> {
+    let input = input.as_ref();
     if input.is_empty() {
         return Err(TtfbError::InvalidUrl(InvalidUrlError::MissingInput));
     }
+    let input = input.to_string();
     let input = prepend_default_scheme_if_necessary(input);
     let url = parse_input_as_url(&input)?;
-    assert_scheme_is_allowed(&url)?;
+    // println!("final url: {}", url);
+    check_scheme_is_allowed(&url)?;
 
     let (addr, dns_duration) = resolve_dns_if_necessary(&url)?;
     let port = url.port_or_known_default().unwrap();
@@ -154,7 +161,7 @@ fn tls_handshake_if_necessary(
     if url.scheme() == "https" {
         let connector: RustlsConnector = if allow_insecure_certificates {
             ClientConfig::builder()
-                .with_safe_defaults()
+                .dangerous()
                 .with_custom_certificate_verifier(Arc::new(AllowInvalidCertsVerifier))
                 .with_no_client_auth()
                 .into()
@@ -186,14 +193,50 @@ pub struct AllowInvalidCertsVerifier;
 impl ServerCertVerifier for AllowInvalidCertsVerifier {
     fn verify_server_cert(
         &self,
-        _end_entity: &Certificate,
-        _intermediates: &[Certificate],
-        _server_name: &rustls::ServerName,
-        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
         _ocsp_response: &[u8],
-        _now: std::time::SystemTime,
-    ) -> Result<ServerCertVerified, rustls::Error> {
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, Error> {
         Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        // Return a list of all.
+        vec![
+            SignatureScheme::RSA_PKCS1_SHA1,
+            SignatureScheme::ECDSA_SHA1_Legacy,
+            SignatureScheme::RSA_PKCS1_SHA256,
+            SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::RSA_PKCS1_SHA384,
+            SignatureScheme::ECDSA_NISTP384_SHA384,
+            SignatureScheme::RSA_PKCS1_SHA512,
+            SignatureScheme::ECDSA_NISTP521_SHA512,
+            SignatureScheme::RSA_PSS_SHA256,
+            SignatureScheme::RSA_PSS_SHA384,
+            SignatureScheme::RSA_PSS_SHA512,
+            SignatureScheme::ED25519,
+            SignatureScheme::ED448,
+        ]
     }
 }
 
@@ -251,27 +294,27 @@ fn parse_input_as_url(input: &str) -> Result<Url, TtfbError> {
         .map_err(|e| TtfbError::InvalidUrl(InvalidUrlError::WrongFormat(e.to_string())))
 }
 
-/// Prepends the default scheme "http://" is necessary. Without a scheme, [`parse_input_as_url`]
-/// will fail.
+/// Prepends the default scheme `http://` is necessary to the user input.
 fn prepend_default_scheme_if_necessary(url: String) -> String {
-    let regex = Regex::new("^(?P<scheme>.*://)?").unwrap();
-    let captures = regex.captures(&url);
-    if let Some(captures) = captures {
-        if captures.name("scheme").is_some() {
-            return url;
-        }
-    }
+    const SCHEME_SEPARATOR: &str = "://";
+    const DEFAULT_SCHEME: &str = "http";
 
-    format!("http://{}", url)
+    (!url.contains(SCHEME_SEPARATOR))
+        .then(|| format!("{DEFAULT_SCHEME}://{url}"))
+        .unwrap_or(url)
 }
 
-/// Assert the scheme is on the allow list. Currently, we only allow "http" and "https".
-fn assert_scheme_is_allowed(url: &Url) -> Result<(), TtfbError> {
-    let allowed_scheme = url.scheme() == "http" || url.scheme() == "https";
+/// Checks the scheme is on the allow list. Currently, we only allow "http"
+/// and "https".
+fn check_scheme_is_allowed(url: &Url) -> Result<(), TtfbError> {
+    let actual_scheme = url.scheme();
+    let allowed_scheme = actual_scheme == "http" || actual_scheme == "https";
     if allowed_scheme {
         Ok(())
     } else {
-        Err(TtfbError::InvalidUrl(InvalidUrlError::WrongScheme))
+        Err(TtfbError::InvalidUrl(InvalidUrlError::WrongScheme(
+            actual_scheme.to_string(),
+        )))
     }
 }
 
@@ -379,21 +422,21 @@ mod tests {
 
     #[test]
     fn test_check_scheme() {
-        assert_scheme_is_allowed(
+        check_scheme_is_allowed(
             &Url::from_str(&prepend_default_scheme_if_necessary(
                 "phip1611.de".to_owned(),
             ))
             .unwrap(),
         )
         .expect("must accept http");
-        assert_scheme_is_allowed(
+        check_scheme_is_allowed(
             &Url::from_str(&prepend_default_scheme_if_necessary(
                 "https://phip1611.de".to_owned(),
             ))
             .unwrap(),
         )
         .expect("must accept http");
-        assert_scheme_is_allowed(
+        check_scheme_is_allowed(
             &Url::from_str(&prepend_default_scheme_if_necessary(
                 "ftp://phip1611.de".to_owned(),
             ))
