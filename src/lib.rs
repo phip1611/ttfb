@@ -101,10 +101,15 @@ impl<T: IoRead + IoWrite> IoReadAndWrite for T {}
 ///
 /// ## Return value
 /// [`TtfbOutcome`] or [`TtfbError`].
-pub fn ttfb(input: String, allow_insecure_certificates: bool) -> Result<TtfbOutcome, TtfbError> {
+pub fn ttfb(
+    input: impl AsRef<str>,
+    allow_insecure_certificates: bool,
+) -> Result<TtfbOutcome, TtfbError> {
+    let input = input.as_ref();
     if input.is_empty() {
         return Err(TtfbError::InvalidUrl(InvalidUrlError::MissingInput));
     }
+    let input = input.to_string();
     let input = prepend_default_scheme_if_necessary(input);
     let url = parse_input_as_url(&input)?;
     assert_scheme_is_allowed(&url)?;
