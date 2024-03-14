@@ -40,7 +40,7 @@ bin = ["clap", "crossterm"]
 # DNS over systems default DNS resolver
 trust-dns-resolver = { version = "0.23.0", features = ["dns-over-rustls"] }
 # TLS handshake
-rustls = { version = "0.22.0", features = [] }
+rustls = { version = "0.23.2", features = [] }
 rustls-connector = { version = "0.19.0", features = [
   "rustls-native-certs",
   "webpki-roots",
