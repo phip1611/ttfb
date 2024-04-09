@@ -327,8 +327,19 @@ fn check_scheme_is_allowed(url: &Url) -> Result<(), TtfbError> {
 /// If the user gave us a domain name, we resolve it using the [`trust-dns-resolver`]
 /// crate and measure the time for it.
 fn resolve_dns_if_necessary(url: &Url) -> Result<(IpAddr, Option<Duration>), TtfbError> {
-    Ok(
-        if url.domain().is_none() || url.domain().unwrap().eq("localhost") {
+    match url.domain() {
+        Some(domain) => {
+            // shortcut
+            if domain.eq("localhost") {
+                Ok((
+                    IpAddr::from_str("127.0.0.1").unwrap(),
+                    Some(Duration::default()),
+                ))
+            } else {
+                resolve_dns(url).map(|(addr, dur)| (addr, Some(dur)))
+            }
+        }
+        None => {
             let mut ip_str = url.host_str().unwrap();
             // [a::b::c::d::e::f::0::1] => ipv6 address
             let is_ipv6_addr = ip_str.starts_with('[');
@@ -337,11 +348,10 @@ fn resolve_dns_if_necessary(url: &Url) -> Result<(IpAddr, Option<Duration>), Ttf
             }
             let addr = IpAddr::from_str(ip_str)
                 .map_err(|e| TtfbError::InvalidUrl(InvalidUrlError::WrongFormat(e.to_string())))?;
-            (addr, None)
-        } else {
-            resolve_dns(url).map(|(addr, dur)| (addr, Some(dur)))?
-        },
-    )
+
+            Ok((addr, None))
+        }
+    }
 }
 
 /// Actually resolves a domain using the systems default DNS resolver.
@@ -440,6 +450,18 @@ mod tests {
         assert_eq!(
             prepend_default_scheme_if_necessary("ftp://192.168.1.102:443/foobar?124141".to_owned()),
             "ftp://192.168.1.102:443/foobar?124141"
+        );
+    }
+
+    #[test]
+    fn test_dns_if_necessary_localhost_shortcut() {
+        let url = url::Url::from_str("http://localhost").unwrap();
+        assert_eq!(
+            resolve_dns_if_necessary(&url),
+            Ok((
+                IpAddr::from_str("127.0.0.1").unwrap(),
+                Some(Duration::from_secs(0))
+            ))
         );
     }
 
