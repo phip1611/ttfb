@@ -1,5 +1,7 @@
 # Unreleased (Yet)
 
+- fix: use this library in a tokio runtime without raising a panic
+
 # v1.10.0 (2023-12-11)
 
 ## ttfb lib

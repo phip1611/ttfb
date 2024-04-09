@@ -48,6 +48,7 @@ SOFTWARE.
 use clap::Parser;
 use crossterm::style::{Attribute, SetAttribute};
 use crossterm::ExecutableCommand;
+use std::error::Error;
 use std::io::stdout;
 use std::process::exit;
 use ttfb::TtfbError;

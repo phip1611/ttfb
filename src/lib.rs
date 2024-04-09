@@ -65,6 +65,7 @@ use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{IpAddr, TcpStream};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant};
 use trust_dns_resolver::Resolver as DnsResolver;
 use url::Url;
@@ -322,18 +323,21 @@ fn check_scheme_is_allowed(url: &Url) -> Result<(), TtfbError> {
 /// If the user gave us a domain name, we resolve it using the [`trust-dns-resolver`]
 /// crate and measure the time for it.
 fn resolve_dns_if_necessary(url: &Url) -> Result<(IpAddr, Option<Duration>), TtfbError> {
-    Ok(if url.domain().is_none() {
-        let mut ip_str = url.host_str().unwrap();
-        // [a::b::c::d::e::f::0::1] => ipv6 address
-        if ip_str.starts_with('[') {
-            ip_str = &ip_str[1..ip_str.len() - 1];
-        }
-        let addr = IpAddr::from_str(ip_str)
-            .map_err(|e| TtfbError::InvalidUrl(InvalidUrlError::WrongFormat(e.to_string())))?;
-        (addr, None)
-    } else {
-        resolve_dns(url).map(|(addr, dur)| (addr, Some(dur)))?
-    })
+    Ok(
+        if url.domain().is_none() || url.domain().unwrap().eq("localhost") {
+            let mut ip_str = url.host_str().unwrap();
+            // [a::b::c::d::e::f::0::1] => ipv6 address
+            let is_ipv6_addr = ip_str.starts_with('[');
+            if is_ipv6_addr {
+                ip_str = &ip_str[1..ip_str.len() - 1];
+            }
+            let addr = IpAddr::from_str(ip_str)
+                .map_err(|e| TtfbError::InvalidUrl(InvalidUrlError::WrongFormat(e.to_string())))?;
+            (addr, None)
+        } else {
+            resolve_dns(url).map(|(addr, dur)| (addr, Some(dur)))?
+        },
+    )
 }
 
 /// Actually resolves a domain using the systems default DNS resolver.
@@ -349,11 +353,28 @@ fn resolve_dns(url: &Url) -> Result<(IpAddr, Duration), TtfbError> {
 
     let begin = Instant::now();
 
-    // at least on Linux this gets cached somehow in the background
-    // probably the DNS implementation/OS has a DNS cache
-    let response = resolver
-        .lookup_ip(url.host_str().unwrap())
-        .map_err(|err| TtfbError::CantResolveDns(ResolveDnsError::Other(Box::new(err))))?;
+    // At least on Linux this gets cached somehow in the background
+    // probably the DNS implementation/OS has a DNS cache.
+    //
+    // Internally, the resolver library spawns a tokio runtime. The only way to
+    // prevent "cannot start a runtime from within a runtime" from tokio is to
+    // move this invocation to a dedicated thread. While this is more a
+    // workaround than a nice solution, it is simple and effective.
+    //
+    // For the performance/measurements, this change is negligible.
+    //
+    // More info: https://stackoverflow.com/a/62536772/2891595
+    let response = {
+        let url = url.clone();
+        thread::spawn(move || {
+            resolver
+                .lookup_ip(url.host_str().unwrap())
+                .map_err(|err| TtfbError::CantResolveDns(ResolveDnsError::Other(Box::new(err))))
+        })
+        .join()
+        .unwrap()?
+    };
+
     let duration = begin.elapsed();
 
     let ipv4_addrs = response

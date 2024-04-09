@@ -74,3 +74,6 @@ features = [
   "usage",
   "wrap_help",
 ]
+
+[dev-dependencies]
+tokio = "1.37"
