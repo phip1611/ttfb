@@ -28,10 +28,10 @@ use rustls_connector::HandshakeError;
 use std::error::Error;
 use std::io;
 use std::net::TcpStream;
-use trust_dns_resolver::error::ResolveError;
+use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
 
 /// Errors during DNS resolving.
-#[derive(Debug, Display)]
+#[derive(Clone, Debug, Display)]
 pub enum ResolveDnsError {
     /// Can't find DNS entry for the given host.
     #[display(fmt = "Can't find DNS entry for the given host.")]
@@ -50,8 +50,34 @@ impl Error for ResolveDnsError {
     }
 }
 
+impl PartialEq for ResolveDnsError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::NoResults, Self::NoResults) => true,
+            (Self::Other(e1), Self::Other(e2)) => match (e1.kind(), e2.kind()) {
+                (ResolveErrorKind::Msg(msg1), ResolveErrorKind::Msg(msg2)) => msg1.eq(msg2),
+                (ResolveErrorKind::Message(msg1), ResolveErrorKind::Message(msg2)) => msg1.eq(msg2),
+                (ResolveErrorKind::NoConnections, ResolveErrorKind::NoConnections) => true,
+                (
+                    ResolveErrorKind::NoRecordsFound { .. },
+                    ResolveErrorKind::NoRecordsFound { .. },
+                ) => true,
+                (ResolveErrorKind::Io(e1), ResolveErrorKind::Io(e2)) => e1.kind().eq(&e2.kind()),
+                (ResolveErrorKind::Proto(_e1), ResolveErrorKind::Proto(_e2)) => {
+                    // nah, ignore it. Proper deep check is too complex.
+                    // Shortcut is good enough for the sake of the library.
+                    true
+                }
+                (ResolveErrorKind::Timeout, ResolveErrorKind::Timeout) => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+}
+
 /// Errors during URL parsing.
-#[derive(Debug, Display)]
+#[derive(Clone, Debug, Display, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum InvalidUrlError {
     /// No input was provided. Provide a URL, such as <https://example.com> or <https://1.2.3.4:443>.
     #[display(
@@ -85,7 +111,7 @@ pub enum TtfbError {
     CantConnectTcp(io::Error),
     /// Can't establish TLS-Connection.
     #[display(fmt = "Can't establish TLS-Connection because: {}", _0)]
-    CantConnectTls(rustls_connector::HandshakeError<std::net::TcpStream>),
+    CantConnectTls(HandshakeError<TcpStream>),
     /// Can't verify TLS-Connection.
     #[display(fmt = "Can't verify TLS-Connection because: {}", _0)]
     CantVerifyTls(HandshakeError<TcpStream>),
@@ -115,6 +141,32 @@ impl Error for TtfbError {
             TtfbError::NoHttpResponse => None,
             TtfbError::CantConfigureDNSError(err) => Some(err),
             TtfbError::CantVerifyTls(err) => Some(err),
+        }
+    }
+}
+
+impl PartialEq for TtfbError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::InvalidUrl(e1), Self::InvalidUrl(e2)) => e1.eq(e2),
+            (Self::CantResolveDns(e1), Self::CantResolveDns(e2)) => e1.eq(e2),
+            (Self::CantConnectTcp(e1), Self::CantConnectTcp(e2)) => e1.kind().eq(&e2.kind()),
+            (Self::CantConnectTls(_e1), Self::CantConnectTls(_e2)) => {
+                // nah, ignore it. Proper deep check is too complex.
+                // Shortcut is good enough for the sake of the library.
+                true
+            }
+            (Self::CantVerifyTls(_e1), Self::CantVerifyTls(_e2)) => {
+                // nah, ignore it. Proper deep check is too complex.
+                // Shortcut is good enough for the sake of the library.
+                true
+            }
+            (Self::CantConnectHttp(e1), Self::OtherStreamError(e2)) => e1.kind().eq(&e2.kind()),
+            (Self::CantConfigureDNSError(e1), Self::CantConfigureDNSError(e2)) => {
+                e1.kind().eq(&e2.kind())
+            }
+            (Self::NoHttpResponse, Self::NoHttpResponse) => true,
+            _ => false,
         }
     }
 }
