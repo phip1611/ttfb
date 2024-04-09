@@ -275,13 +275,17 @@ fn execute_http_get(
 }
 
 /// Constructs the header for a HTTP/1.1 GET-Request.
+///
+/// Sets the following default headers:
+/// - `Accept-Encoding: gzip, deflate, br, zstd` (default of Chrome v123)
+/// - `User-Agent: ttfb/<version>`
 fn build_http11_header(url: &Url) -> String {
     format!(
         "GET {path} HTTP/1.1\r\n\
         Host: {host}\r\n\
         User-Agent: ttfb/{version}\r\n\
         Accept: */*\r\n\
-        Accept-Encoding: gzip, deflate, br\r\n\
+        Accept-Encoding: gzip, deflate, br, zstd\r\n\
         \r\n",
         path = url.path(),
         host = url.host_str().unwrap(),
