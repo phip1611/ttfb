@@ -48,4 +48,4 @@ HTTP Resp TTFB:        76.432         149.046
 
 ## MSRV
 The MSRV of the library is `1.65.0` stable.
-The MSRV of the binary is `1.70.0` stable.
+The MSRV of the binary is `1.74.1` stable.

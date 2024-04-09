@@ -14,8 +14,8 @@ jobs:
       fail-fast: false
       matrix:
         runs-on: [ macos-latest, ubuntu-latest, windows-latest ]
-        # 1.64: MSVR of the CLI binary
-        rust: [ 1.70.0, stable, nightly ]
+        # 1.74.1: MSVR of the CLI binary
+        rust: [ 1.74.1, stable, nightly ]
     runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4

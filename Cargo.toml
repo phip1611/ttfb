@@ -62,7 +62,7 @@ version = "0.27.0"
 # CLI args parsing
 [dependencies.clap]
 optional = true
-version = "4.4.0"
+version = "~4.5.0"
 features = [
   "color",
   "derive",
