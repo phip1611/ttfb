@@ -168,7 +168,7 @@ fn tls_handshake_if_necessary(
                 .into()
         } else {
             RustlsConnector::new_with_native_certs()
-                .map_or_else(|_| RustlsConnector::new_with_webpki_roots_certs(), |v| v)
+                .unwrap_or_else(|_| RustlsConnector::new_with_webpki_roots_certs())
         };
         let now = Instant::now();
 
@@ -397,8 +397,6 @@ fn resolve_dns(url: &Url) -> Result<(IpAddr, Duration), TtfbError> {
 
 #[cfg(all(test, not(network_tests)))]
 mod tests {
-    use crate::parse_input_as_url;
-
     use super::*;
 
     #[test]
