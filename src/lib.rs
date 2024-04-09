@@ -1,7 +1,7 @@
 /*
 MIT License
 
-Copyright (c) 2021 Philipp Schuster
+Copyright (c) 2024 Philipp Schuster
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -425,6 +425,8 @@ mod tests {
         parse_input_as_url("https://goo-gle.com:443/foobar?124141").expect("to be valid");
         parse_input_as_url("https://subdomain.goo-gle.com:443/foobar?124141").expect("to be valid");
         parse_input_as_url("https://192.168.1.102:443/foobar?124141").expect("to be valid");
+
+        parse_input_as_url("http://localhost").expect("to be valid");
     }
 
     #[test]
