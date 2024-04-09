@@ -1,5 +1,10 @@
 # Unreleased (Yet)
 
+- **BREAKING** The MSRV of the binary is `1.74.1` stable.
+- fix: use this library in a tokio runtime without raising a panic
+- `TtfbError` now implements `PartialEq`
+- dependency updates
+
 # v1.10.0 (2023-12-11)
 
 ## ttfb lib
