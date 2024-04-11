@@ -24,11 +24,11 @@ SOFTWARE.
 //! Module for [`TtfbError`].
 
 use derive_more::Display;
+use hickory_resolver::error::{ResolveError, ResolveErrorKind};
 use rustls_connector::HandshakeError;
 use std::error::Error;
 use std::io;
 use std::net::TcpStream;
-use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
 
 /// Errors during DNS resolving.
 #[derive(Clone, Debug, Display)]

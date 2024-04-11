@@ -57,6 +57,7 @@ SOFTWARE.
 pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
 pub use outcome::{DurationPair, TtfbOutcome};
 
+use hickory_resolver::Resolver as DnsResolver;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, Error, SignatureScheme};
@@ -67,7 +68,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
-use trust_dns_resolver::Resolver as DnsResolver;
 use url::Url;
 
 mod error;
