@@ -45,6 +45,7 @@ jobs:
         run: cargo run --release --features bin -- github.com
 
   # The lib is already transitively build above. Here, we only verify the MSRV.
+  # The rust toolchain comes from `rust-toolchain.toml`.
   build_library_msrv:
     runs-on: ubuntu-latest
     steps:
