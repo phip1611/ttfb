@@ -1,5 +1,7 @@
 # Unreleased (Yet)
 
+# v1.12.0 (2024-05-01)
+
 ## ttfb lib
 
 - **BREAKING** The MSRV is now `1.67.0` stable.
