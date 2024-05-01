@@ -41,10 +41,10 @@ bin = ["dep:clap", "dep:crossterm"]
 hickory-resolver = { version = "0.24.0", default-features = false, features = ["dns-over-rustls", "system-config"] }
 # TLS handshake
 rustls = { version = "0.23.0", default-features = false, features = [ "tls12", "logging", "ring"] }
-# rustls-connector = { version = "0.21.0", features = [
-rustls-connector = { git = "https://github.com/phip1611/rustls-connector", branch = "rustls-fix", features = [
+rustls-connector = { version = "0.21.0", default-features = false, features = [
+  "rustls--ring",
+  "native-certs",
   "rustls-native-certs",
-  "webpki-roots",
   "webpki-roots-certs",
 ] }
 # automatic Display impl for enums
