@@ -1,5 +1,14 @@
 # Unreleased (Yet)
 
+## ttfb lib
+
+- **BREAKING** The MSRV is now `1.67.0` stable.
+- dependency updates
+
+## ttfb binary
+
+- dependency updates
+
 # v1.11.0 (2024-04-09)
 
 ## ttfb lib
