@@ -742,7 +742,8 @@ dependencies = [
 [[package]]
 name = "rustls-connector"
 version = "0.21.0"
-source = "git+https://github.com/phip1611/rustls-connector?branch=rustls-fix#eb2a5ed6542de224cfc9b45fd5f0c61507613080"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dea7a8403f12682af445d9daec1bbc6d75734af534238db4021616002b3fac6"
 dependencies = [
  "log",
  "rustls 0.23.5",
