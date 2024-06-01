@@ -77,4 +77,4 @@ features = [
 ]
 
 [dev-dependencies]
-tokio = "1.37"
+tokio = "1.38"
