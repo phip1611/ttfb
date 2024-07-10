@@ -43,12 +43,14 @@ impl DurationPair {
     }
 
     /// Returns the duration of that step.
+    #[must_use]
     pub const fn relative(&self) -> Duration {
         self.rel
     }
 
     /// Returns the total duration between the start of the measurement
     /// and the end of this measurement step.
+    #[must_use]
     pub const fn total(&self) -> Duration {
         self.total
     }
@@ -104,33 +106,39 @@ impl TtfbOutcome {
     }
 
     /// Getter for the provided user input (Host or IP address).
+    #[must_use]
     pub fn user_input(&self) -> &str {
         &self.user_input
     }
 
     /// Getter for `ip_addr` that was used.
+    #[must_use]
     pub const fn ip_addr(&self) -> IpAddr {
         self.ip_addr
     }
 
     /// Getter for `port` that was used.
+    #[must_use]
     pub const fn port(&self) -> u16 {
         self.port
     }
 
     /// Returns the [`DurationPair`] for the DNS step, if DNS lookup was necessary.
+    #[must_use]
     pub fn dns_lookup_duration(&self) -> Option<DurationPair> {
         self.dns_duration_rel
             .map(|d| DurationPair::new(d, Duration::default()))
     }
 
     /// Returns the [`DurationPair`] for the establishment of the TCP connection.
+    #[must_use]
     pub fn tcp_connect_duration(&self) -> DurationPair {
         let abs_dur_so_far = self.dns_lookup_duration().unwrap_or_default().total();
         DurationPair::new(self.tcp_connect_duration_rel, abs_dur_so_far)
     }
 
     /// Returns the [`DurationPair`] for the TLS handshake, if the TLS handshake was necessary.
+    #[must_use]
     pub fn tls_handshake_duration(&self) -> Option<DurationPair> {
         self.tls_handshake_duration_rel.map(|dur| {
             let abs_dur_so_far = self.tcp_connect_duration().total();
@@ -139,12 +147,14 @@ impl TtfbOutcome {
     }
 
     /// Returns the [`DurationPair`] for the transmission of the HTTP GET request.
+    #[must_use]
     pub fn http_get_send_duration(&self) -> DurationPair {
         let abs_dur_so_far = self.tls_handshake_duration().unwrap_or_default().total();
         DurationPair::new(self.http_get_send_duration_rel, abs_dur_so_far)
     }
 
     /// Returns the [`DurationPair`] for the time to first byte (TTFB) of the HTTP response.
+    #[must_use]
     pub fn ttfb_duration(&self) -> DurationPair {
         let abs_dur_so_far = self.http_get_send_duration().total();
         DurationPair::new(self.http_ttfb_duration_rel, abs_dur_so_far)
