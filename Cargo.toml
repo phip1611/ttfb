@@ -58,7 +58,7 @@ url = "2.5.0"
 # used for the binary, not the lib
 [dependencies.crossterm]
 optional = true
-version = "0.27.0"
+version = "0.28.0"
 
 # CLI args parsing
 [dependencies.clap]
