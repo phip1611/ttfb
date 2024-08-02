@@ -78,3 +78,7 @@ features = [
 
 [dev-dependencies]
 tokio = "1.38"
+
+[lints.rust]
+# level is probably irrelevant
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(network_tests)'] }
