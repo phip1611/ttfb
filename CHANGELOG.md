@@ -1,4 +1,14 @@
-# Unreleased (Yet)
+# About
+
+As this crate exports a library and a binary, both are released simultaneously.
+However, some releases might only change things in the library and some might
+only change something for the binary.
+
+# v1.13.0 (2024-08-02)
+
+## ttfb lib
+
+- **BREAKING** The MSRV is now `1.70.0` stable.
 
 # v1.12.0 (2024-05-02)
 

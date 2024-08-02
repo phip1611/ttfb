@@ -7,7 +7,7 @@ absolute timings of DNS lookup, TCP connect, and TLS handshake.
 """
 version = "1.12.0"
 edition = "2021"
-rust-version = "1.67" # MSRV of the library (= min(lib,bin))
+rust-version = "1.70" # MSRV of the library (= min(lib,bin))
 keywords = ["ttfb", "http", "timings", "web"]
 categories = ["network-programming", "command-line-utilities"]
 readme = "README.md"
@@ -58,7 +58,7 @@ url = "2.5.0"
 # used for the binary, not the lib
 [dependencies.crossterm]
 optional = true
-version = "0.27.0"
+version = "0.28.0"
 
 # CLI args parsing
 [dependencies.clap]
@@ -77,4 +77,8 @@ features = [
 ]
 
 [dev-dependencies]
-tokio = "1.38"
+tokio = "1.39"
+
+[lints.rust]
+# level is probably irrelevant
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(network_tests)'] }
