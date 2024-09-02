@@ -48,7 +48,7 @@ rustls-connector = { version = "0.21.0", default-features = false, features = [
   "webpki-roots-certs",
 ] }
 # automatic Display impl for enums
-derive_more = { version = "0.99.0", default-features = false, features = [
+derive_more = { version = "1.0.0", default-features = false, features = [
   "display",
 ] }
 # nice abstraction of URL
