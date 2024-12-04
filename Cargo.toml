@@ -5,9 +5,9 @@ Library + CLI utility to measure the TTFB (time to first byte) of HTTP(S)
 requests. This includes data of intermediate steps, such as the relative and
 absolute timings of DNS lookup, TCP connect, and TLS handshake.
 """
-version = "1.13.1"
+version = "1.14.0"
 edition = "2021"
-rust-version = "1.70" # MSRV of the library (= min(lib,bin))
+rust-version = "1.75" # MSRV of the library (= min(lib,bin))
 keywords = ["ttfb", "http", "timings", "web"]
 categories = ["network-programming", "command-line-utilities"]
 readme = "README.md"
@@ -40,30 +40,29 @@ bin = ["dep:clap", "dep:crossterm"]
 # DNS over systems default DNS resolver
 hickory-resolver = { version = "0.24.0", default-features = false, features = ["dns-over-rustls", "system-config"] }
 # TLS handshake
-rustls = { version = "0.23.0", default-features = false, features = [ "tls12", "logging", "ring"] }
-rustls-connector = { version = "0.21.0", default-features = false, features = [
+rustls = { version = "0.23.19", default-features = false, features = [ "tls12", "logging", "ring"] }
+rustls-connector = { version = "0.21.4", default-features = false, features = [
   "rustls--ring",
   "native-certs",
-  "rustls-native-certs",
   "webpki-roots-certs",
 ] }
 # automatic Display impl for enums
-derive_more = { version = "0.99.0", default-features = false, features = [
+derive_more = { version = "1.0.0", default-features = false, features = [
   "display",
 ] }
 # nice abstraction of URL
-url = "=2.5.0"
+url = "2.5.4"
 
 # +++ BINARY +++
 # used for the binary, not the lib
 [dependencies.crossterm]
 optional = true
-version = "0.28.0"
+version = "0.28.1"
 
 # CLI args parsing
 [dependencies.clap]
 optional = true
-version = "~4.5.0"
+version = "~4.5.22"
 features = [
   "color",
   "derive",
@@ -77,7 +76,7 @@ features = [
 ]
 
 [dev-dependencies]
-tokio = "1.41"
+tokio = "1.42"
 
 [lints.rust]
 # level is probably irrelevant

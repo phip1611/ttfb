@@ -4,6 +4,18 @@ As this crate exports a library and a binary, both are released simultaneously.
 However, some releases might only change things in the library and some might
 only change something for the binary.
 
+# v1.14.0 (2024-12-04)
+
+## ttfb lib
+
+- **BREAKING** The MSRV is now `1.75.0` stable.
+- dependency updates
+
+## ttfb binary
+
+- **BREAKING** The MSRV is now `1.75.0` stable.
+- dependency updates
+
 # v1.13.1 (2024-12-04)
 
 ## ttfb lib

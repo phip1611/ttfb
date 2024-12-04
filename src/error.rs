@@ -34,10 +34,10 @@ use std::net::TcpStream;
 #[derive(Clone, Debug, Display)]
 pub enum ResolveDnsError {
     /// Can't find DNS entry for the given host.
-    #[display(fmt = "Can't find DNS entry for the given host.")]
+    #[display("Can't find DNS entry for the given host.")]
     NoResults,
     /// Couldn't resolve DNS for given host.
-    #[display(fmt = "Couldn't resolve DNS for given host because: {}", _0)]
+    #[display("Couldn't resolve DNS for given host because: {}", _0)]
     Other(Box<ResolveError>),
 }
 
@@ -81,17 +81,17 @@ impl PartialEq for ResolveDnsError {
 pub enum InvalidUrlError {
     /// No input was provided. Provide a URL, such as <https://example.com> or <https://1.2.3.4:443>.
     #[display(
-        fmt = "No input was provided. Provide a URL, such as https://example.com or https://1.2.3.4:443"
+        "No input was provided. Provide a URL, such as https://example.com or https://1.2.3.4:443"
     )]
     MissingInput,
     /// The URL is illegal.
-    #[display(fmt = "The URL is illegal because: {}", _0)]
+    #[display("The URL is illegal because: {}", _0)]
     WrongFormat(String),
     /// Wrong scheme. Only supports http and https.
-    #[display(fmt = "Wrong scheme '{}://': Only supports http and https.", _0)]
+    #[display("Wrong scheme '{}://': Only supports http and https.", _0)]
     WrongScheme(String),
     /// Other unknown error.
-    #[display(fmt = "Other unknown error.")]
+    #[display("Other unknown error.")]
     Other,
 }
 
@@ -101,31 +101,31 @@ impl Error for InvalidUrlError {}
 #[derive(Debug, Display)]
 pub enum TtfbError {
     /// Invalid URL
-    #[display(fmt = "Invalid URL: {}", _0)]
+    #[display("Invalid URL: {}", _0)]
     InvalidUrl(InvalidUrlError),
     /// Can't resolve DNS.
-    #[display(fmt = "Can't resolve DNS because: {}", _0)]
+    #[display("Can't resolve DNS because: {}", _0)]
     CantResolveDns(ResolveDnsError),
     /// Can't establish TCP-Connection.
-    #[display(fmt = "Can't establish TCP-Connection because: {}", _0)]
+    #[display("Can't establish TCP-Connection because: {}", _0)]
     CantConnectTcp(io::Error),
     /// Can't establish TLS-Connection.
-    #[display(fmt = "Can't establish TLS-Connection because: {}", _0)]
+    #[display("Can't establish TLS-Connection because: {}", _0)]
     CantConnectTls(HandshakeError<TcpStream>),
     /// Can't verify TLS-Connection.
-    #[display(fmt = "Can't verify TLS-Connection because: {}", _0)]
+    #[display("Can't verify TLS-Connection because: {}", _0)]
     CantVerifyTls(HandshakeError<TcpStream>),
     /// Can't establish HTTP/1.1-Connection.
-    #[display(fmt = "Can't establish HTTP/1.1-Connection because: {}", _0)]
+    #[display("Can't establish HTTP/1.1-Connection because: {}", _0)]
     CantConnectHttp(io::Error),
     /// Didn't receive any data after sending the HTTP GET request.
-    #[display(fmt = "Didn't receive any data. Is the host running a HTTP server?")]
+    #[display("Didn't receive any data. Is the host running a HTTP server?")]
     NoHttpResponse,
     /// There was a problem with the TCP stream.
-    #[display(fmt = "There was a problem with the TCP stream because: {}", _0)]
+    #[display("There was a problem with the TCP stream because: {}", _0)]
     OtherStreamError(io::Error),
     /// Can't configure trust-dns-resolver configuration.
-    #[display(fmt = "Failed to configure DNS based on system or default settings: {_0}")]
+    #[display("Failed to configure DNS based on system or default settings: {_0}")]
     CantConfigureDNSError(io::Error),
 }
 
