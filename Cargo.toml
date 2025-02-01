@@ -76,7 +76,7 @@ features = [
 ]
 
 [dev-dependencies]
-tokio = "1.42"
+tokio = "1.43"
 
 [lints.rust]
 # level is probably irrelevant
