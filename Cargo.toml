@@ -38,7 +38,7 @@ bin = ["dep:clap", "dep:crossterm"]
 # +++ LIBRARY +++
 
 # DNS over systems default DNS resolver
-hickory-resolver = { version = "0.24.0", default-features = false, features = ["dns-over-rustls", "system-config"] }
+hickory-resolver = { version = "0.24.4", default-features = false, features = ["dns-over-rustls", "system-config"] }
 # TLS handshake
 rustls = { version = "0.23.19", default-features = false, features = [ "tls12", "logging", "ring"] }
 rustls-connector = { version = "0.21.4", default-features = false, features = [
