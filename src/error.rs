@@ -24,7 +24,7 @@ SOFTWARE.
 //! Module for [`TtfbError`].
 
 use derive_more::Display;
-use hickory_resolver::error::{ResolveError, ResolveErrorKind};
+use hickory_resolver::{ResolveError, ResolveErrorKind};
 use rustls_connector::HandshakeError;
 use std::error::Error;
 use std::io;
@@ -57,18 +57,11 @@ impl PartialEq for ResolveDnsError {
             (Self::Other(e1), Self::Other(e2)) => match (e1.kind(), e2.kind()) {
                 (ResolveErrorKind::Msg(msg1), ResolveErrorKind::Msg(msg2)) => msg1.eq(msg2),
                 (ResolveErrorKind::Message(msg1), ResolveErrorKind::Message(msg2)) => msg1.eq(msg2),
-                (ResolveErrorKind::NoConnections, ResolveErrorKind::NoConnections) => true,
-                (
-                    ResolveErrorKind::NoRecordsFound { .. },
-                    ResolveErrorKind::NoRecordsFound { .. },
-                ) => true,
-                (ResolveErrorKind::Io(e1), ResolveErrorKind::Io(e2)) => e1.kind().eq(&e2.kind()),
                 (ResolveErrorKind::Proto(_e1), ResolveErrorKind::Proto(_e2)) => {
                     // nah, ignore it. Proper deep check is too complex.
                     // Shortcut is good enough for the sake of the library.
                     true
                 }
-                (ResolveErrorKind::Timeout, ResolveErrorKind::Timeout) => true,
                 _ => false,
             },
             _ => false,
@@ -126,7 +119,7 @@ pub enum TtfbError {
     OtherStreamError(io::Error),
     /// Can't configure trust-dns-resolver configuration.
     #[display("Failed to configure DNS based on system or default settings: {_0}")]
-    CantConfigureDNSError(io::Error),
+    CantConfigureDNSError(ResolveError),
 }
 
 impl Error for TtfbError {
@@ -162,8 +155,10 @@ impl PartialEq for TtfbError {
                 true
             }
             (Self::CantConnectHttp(e1), Self::OtherStreamError(e2)) => e1.kind().eq(&e2.kind()),
-            (Self::CantConfigureDNSError(e1), Self::CantConfigureDNSError(e2)) => {
-                e1.kind().eq(&e2.kind())
+            (Self::CantConfigureDNSError(_e1), Self::CantConfigureDNSError(_e2)) => {
+                // nah, ignore it. Proper deep check is too complex.
+                // Shortcut is good enough for the sake of the library.
+                true
             }
             (Self::NoHttpResponse, Self::NoHttpResponse) => true,
             _ => false,

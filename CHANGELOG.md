@@ -4,6 +4,21 @@ As this crate exports a library and a binary, both are released simultaneously.
 However, some releases might only change things in the library and some might
 only change something for the binary.
 
+# v1.15.0 (2025-04-02)
+
+## ttfb lib
+
+- **BREAKING** The MSRV is now `1.85.0` stable. The Rust edition is now `2024`.
+- dependency updates
+- As I had to update `hickory-resolver`, we now have a forced dependency on
+  `tokio`, unfortunately.
+
+## ttfb binary
+
+- **BREAKING** The MSRV is now `1.85.0` stable. The Rust edition is now `2024`.
+- dependency updates
+- The release binary is now (on Linux) 3.3 MiB in size or 2.8 MiB when stripped.
+
 # v1.14.0 (2024-12-04)
 
 ## ttfb lib

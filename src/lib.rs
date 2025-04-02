@@ -325,8 +325,8 @@ fn check_scheme_is_allowed(url: &Url) -> Result<(), TtfbError> {
 }
 
 /// Checks from the URL if we already have an IP address or not.
-/// If the user gave us a domain name, we resolve it using the [`trust-dns-resolver`]
-/// crate and measure the time for it.
+/// If the user gave us a domain name, we resolve it using the
+/// [`hickory_resolver`] crate and measure the time for it.
 fn resolve_dns_if_necessary(url: &Url) -> Result<(IpAddr, Option<Duration>), TtfbError> {
     match url.domain() {
         Some(domain) => {
@@ -362,33 +362,45 @@ fn resolve_dns(url: &Url) -> Result<(IpAddr, Duration), TtfbError> {
     // On Unix/Posix systems, this will read: /etc/resolv.conf
     // In the end, this uses the name server of the system or falls back to
     // the library's default (usually Google DNS).
-    let resolver = DnsResolver::from_system_conf()
-        .or_else(|_| DnsResolver::default())
-        .map_err(TtfbError::CantConfigureDNSError)?;
+    let resolver = DnsResolver::builder_tokio()
+        .map_err(TtfbError::CantConfigureDNSError)?
+        .build();
 
     let begin = Instant::now();
 
-    // At least on Linux this gets cached somehow in the background
-    // probably the DNS implementation/OS has a DNS cache.
+    // We do the DNS resolving in a tokio runtime in a background task. There
+    // are two reasons for that:
+    // - I must use tokio because of `hickory_resolver`; I'd like to get rid of
+    //   it
+    // - This library is designed with a blocking API but should be embeddable
+    //   in a tokio runtime. To prevent the start of a tokio runtime in a thread
+    //   already having a tokio runtime, we spawn a dedicated thread.
     //
-    // Internally, the resolver library spawns a tokio runtime. The only way to
-    // prevent "cannot start a runtime from within a runtime" from tokio is to
-    // move this invocation to a dedicated thread. While this is more a
-    // workaround than a nice solution, it is simple and effective.
-    //
-    // For the performance/measurements, this change is negligible.
+    // For the performance/measurements, this overhead is negligible.
     //
     // More info: https://stackoverflow.com/a/62536772/2891595
     let response = {
-        let url = url.clone();
-        thread::spawn(move || {
-            resolver
-                .lookup_ip(url.host_str().unwrap())
-                .map_err(|err| TtfbError::CantResolveDns(ResolveDnsError::Other(Box::new(err))))
+        thread::scope(|s| {
+            s.spawn(|| {
+                let tokio = tokio::runtime::Builder::new_current_thread()
+                    .enable_time()
+                    .enable_io()
+                    .build()
+                    .unwrap();
+                tokio.block_on(async {
+                    resolver
+                        .lookup_ip(url.host_str().unwrap())
+                        .await
+                        .map(|res| res.iter().collect::<Vec<IpAddr>>())
+                        .map_err(|err| {
+                            TtfbError::CantResolveDns(ResolveDnsError::Other(Box::new(err)))
+                        })
+                })
+            })
+            .join()
+            .unwrap()
         })
-        .join()
-        .unwrap()?
-    };
+    }?;
 
     let duration = begin.elapsed();
 
@@ -402,9 +414,9 @@ fn resolve_dns(url: &Url) -> Result<(IpAddr, Duration), TtfbError> {
         .collect::<Vec<_>>();
 
     if !ipv4_addrs.is_empty() {
-        Ok((ipv4_addrs[0], duration))
+        Ok((*ipv4_addrs[0], duration))
     } else if !ipv6_addrs.is_empty() {
-        Ok((ipv6_addrs[0], duration))
+        Ok((*ipv6_addrs[0], duration))
     } else {
         Err(TtfbError::CantResolveDns(ResolveDnsError::NoResults))
     }

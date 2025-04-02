@@ -5,9 +5,9 @@ Library + CLI utility to measure the TTFB (time to first byte) of HTTP(S)
 requests. This includes data of intermediate steps, such as the relative and
 absolute timings of DNS lookup, TCP connect, and TLS handshake.
 """
-version = "1.14.0"
-edition = "2021"
-rust-version = "1.75" # MSRV of the library (= min(lib,bin))
+version = "1.15.0"
+edition = "2024"
+rust-version = "1.85" # MSRV of the library (= min(lib,bin))
 keywords = ["ttfb", "http", "timings", "web"]
 categories = ["network-programming", "command-line-utilities"]
 readme = "README.md"
@@ -24,7 +24,7 @@ authors = [
 [profile.release]
 codegen-units = 1
 lto = true
-strip = true
+opt-level = "s"
 
 [[bin]]
 name = "ttfb"
@@ -37,18 +37,18 @@ bin = ["dep:clap", "dep:crossterm"]
 [dependencies]
 # +++ LIBRARY +++
 
+# automatic Display impl for enums
+derive_more = { version = "2.0.1", default-features = false, features = [
+  "display",
+] }
 # DNS over systems default DNS resolver
-hickory-resolver = { version = "0.24.4", default-features = false, features = ["dns-over-rustls", "system-config"] }
+hickory-resolver = { version = "=0.25.1", default-features = false, features = ["system-config", "tokio"] }
 # TLS handshake
-rustls = { version = "0.23.19", default-features = false, features = [ "tls12", "logging", "ring"] }
-rustls-connector = { version = "0.21.4", default-features = false, features = [
+rustls = { version = "0.23.25", default-features = false, features = ["tls12", "logging", "ring"] }
+rustls-connector = { version = "0.21.6", default-features = false, features = [
   "rustls--ring",
   "native-certs",
   "webpki-roots-certs",
-] }
-# automatic Display impl for enums
-derive_more = { version = "1.0.0", default-features = false, features = [
-  "display",
 ] }
 # nice abstraction of URL
 url = "2.5.4"
@@ -62,7 +62,7 @@ version = "0.28.1"
 # CLI args parsing
 [dependencies.clap]
 optional = true
-version = "~4.5.22"
+version = "~4.5.35"
 features = [
   "color",
   "derive",
@@ -75,8 +75,12 @@ features = [
   "wrap_help",
 ]
 
-[dev-dependencies]
-tokio = "1.42"
+[dependencies.tokio]
+version = "1.44.1"
+default-features = false
+features = [
+  "rt",
+]
 
 [lints.rust]
 # level is probably irrelevant
