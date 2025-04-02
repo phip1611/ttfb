@@ -47,8 +47,8 @@ SOFTWARE.
 #![deny(rustdoc::all)]
 
 use clap::Parser;
-use crossterm::style::{Attribute, SetAttribute};
 use crossterm::ExecutableCommand;
+use crossterm::style::{Attribute, SetAttribute};
 use std::io::stdout;
 use std::process::exit;
 use ttfb::TtfbError;
