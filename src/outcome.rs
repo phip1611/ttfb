@@ -35,6 +35,7 @@ pub struct DurationPair {
 }
 
 impl DurationPair {
+    #[allow(clippy::missing_const_for_fn)] // MSRV blocker
     fn new(duration_step: Duration, absolute_duration_so_far: Duration) -> Self {
         Self {
             rel: duration_step,
@@ -107,6 +108,7 @@ impl TtfbOutcome {
 
     /// Getter for the provided user input (Host or IP address).
     #[must_use]
+    #[allow(clippy::missing_const_for_fn)] // MSRV blocker
     pub fn user_input(&self) -> &str {
         &self.user_input
     }
