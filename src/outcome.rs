@@ -189,7 +189,7 @@ mod tests {
             1 + 2,
             "DNS + TCP connect"
         );
-        println!("{:#?}", outcome);
+        println!("{outcome:#?}");
         assert_eq!(
             outcome
                 .tls_handshake_duration()

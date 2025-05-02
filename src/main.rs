@@ -98,7 +98,7 @@ fn exit_error(err: TtfbError) -> ! {
     eprint!("\u{1b}[1m");
     eprint!("ERROR: ",);
     eprint!("\u{1b}[0m");
-    eprint!("{}", err);
+    eprint!("{err}");
     eprintln!();
     exit(-1)
 }

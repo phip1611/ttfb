@@ -305,9 +305,11 @@ fn prepend_default_scheme_if_necessary(url: String) -> String {
     const SCHEME_SEPARATOR: &str = "://";
     const DEFAULT_SCHEME: &str = "http";
 
-    (!url.contains(SCHEME_SEPARATOR))
-        .then(|| format!("{DEFAULT_SCHEME}://{url}"))
-        .unwrap_or(url)
+    if url.contains(SCHEME_SEPARATOR) {
+        url
+    } else {
+        format!("{DEFAULT_SCHEME}://{url}")
+    }
 }
 
 /// Checks the scheme is on the allow list. Currently, we only allow "http"
