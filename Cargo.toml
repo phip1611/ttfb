@@ -76,7 +76,7 @@ features = [
 ]
 
 [dependencies.tokio]
-version = "1.46.1"
+version = "1.47.1"
 default-features = false
 features = [
   "rt",
