@@ -45,7 +45,7 @@ derive_more = { version = "2.0.1", default-features = false, features = [
 hickory-resolver = { version = "=0.25.1", default-features = false, features = ["system-config", "tokio"] }
 # TLS handshake
 rustls = { version = "0.23.25", default-features = false, features = ["tls12", "logging", "ring"] }
-rustls-connector = { version = "0.21.6", default-features = false, features = [
+rustls-connector = { version = "0.22.0", default-features = false, features = [
   "rustls--ring",
   "native-certs",
   "webpki-roots-certs",
