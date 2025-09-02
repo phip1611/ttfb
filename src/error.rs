@@ -104,10 +104,10 @@ pub enum TtfbError {
     CantConnectTcp(io::Error),
     /// Can't establish TLS-Connection.
     #[display("Can't establish TLS-Connection because: {}", _0)]
-    CantConnectTls(HandshakeError<TcpStream>),
+    CantConnectTls(Box<HandshakeError<TcpStream>>),
     /// Can't verify TLS-Connection.
     #[display("Can't verify TLS-Connection because: {}", _0)]
-    CantVerifyTls(HandshakeError<TcpStream>),
+    CantVerifyTls(Box<HandshakeError<TcpStream>>),
     /// Can't establish HTTP/1.1-Connection.
     #[display("Can't establish HTTP/1.1-Connection because: {}", _0)]
     CantConnectHttp(io::Error),

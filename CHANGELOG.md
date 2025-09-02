@@ -4,6 +4,18 @@ As this crate exports a library and a binary, both are released simultaneously.
 However, some releases might only change things in the library and some might
 only change something for the binary.
 
+# v2.0.0 (UNRELEASED)
+
+## ttfb lib
+
+- `TtfbError::CantConnectTls` and `TtfbError::CantVerifyTls` have their
+  `<HandshakeError<TcpStream>>` payload now wrapped in a `Box`, as it is
+  quite large.
+
+## ttfb binary
+
+-
+
 # v1.15.0 (2025-04-02)
 
 ## ttfb lib

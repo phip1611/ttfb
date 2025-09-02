@@ -179,6 +179,7 @@ fn tls_handshake_if_necessary(
         let certificate_host = url.host_str().unwrap_or("");
         let mut stream = connector
             .connect(certificate_host, tcp)
+            .map_err(Box::new)
             .map_err(TtfbError::CantVerifyTls)?;
         stream.flush().map_err(TtfbError::OtherStreamError)?;
         let tls_handshake_duration = now.elapsed();
