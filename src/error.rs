@@ -125,15 +125,15 @@ pub enum TtfbError {
 impl Error for TtfbError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            TtfbError::InvalidUrl(err) => Some(err),
-            TtfbError::CantResolveDns(err) => Some(err),
-            TtfbError::CantConnectTls(err) => Some(err),
-            TtfbError::CantConnectTcp(err) => Some(err),
-            TtfbError::OtherStreamError(err) => Some(err),
-            TtfbError::CantConnectHttp(err) => Some(err),
-            TtfbError::NoHttpResponse => None,
-            TtfbError::CantConfigureDNSError(err) => Some(err),
-            TtfbError::CantVerifyTls(err) => Some(err),
+            Self::InvalidUrl(err) => Some(err),
+            Self::CantResolveDns(err) => Some(err),
+            Self::CantConnectTls(err) => Some(err),
+            Self::CantConnectTcp(err) => Some(err),
+            Self::OtherStreamError(err) => Some(err),
+            Self::CantConnectHttp(err) => Some(err),
+            Self::NoHttpResponse => None,
+            Self::CantConfigureDNSError(err) => Some(err),
+            Self::CantVerifyTls(err) => Some(err),
         }
     }
 }
