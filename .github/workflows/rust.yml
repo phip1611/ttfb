@@ -34,10 +34,8 @@ jobs:
         run: cargo build --all-targets --features bin --verbose
       - name: cargo build (release)
         run: cargo build --all-targets --features bin --verbose --release
-      # The next step will be cached by the CI cache.
-      - name: Install cargo-nextest
-        run: which cargo-nextest || cargo +stable install cargo-nextest
-      - run: cargo nextest run --verbose
+      - name: cargo test --verbose
+        run: cargo test --verbose
       # Test that we don't segfault or so because of the LTO.
       - name: "CLI [release]: ttfb --help"
         run: cargo run --release --features bin -- --help
