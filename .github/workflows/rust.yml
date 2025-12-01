@@ -18,7 +18,7 @@ jobs:
         rust: [ 1.85.0, stable, nightly ]
     runs-on: ${{ matrix.runs-on }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -47,14 +47,14 @@ jobs:
   build_library_msrv:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Build Lib as Dependency with MSRV
         run: cd ttfb-lib-msrv-check && cargo check --all-targets --verbose
 
   tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -68,7 +68,7 @@ jobs:
     env:
       RUSTFLAGS: --cfg network_tests
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -80,7 +80,7 @@ jobs:
   style_checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
