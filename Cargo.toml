@@ -42,7 +42,7 @@ derive_more = { version = "2.1.1", default-features = false, features = [
   "display",
 ] }
 # DNS over systems default DNS resolver
-hickory-resolver = { version = "=0.25.1", default-features = false, features = ["system-config", "tokio"] }
+hickory-resolver = { version = "=0.25.2", default-features = false, features = ["system-config", "tokio"] }
 # TLS handshake
 rustls = { version = "0.23.25", default-features = false, features = ["tls12", "logging", "ring"] }
 rustls-connector = { version = "0.22.0", default-features = false, features = [
