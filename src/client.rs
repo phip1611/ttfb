@@ -371,6 +371,7 @@ mod tests {
 #[cfg(all(test, network_tests))]
 mod network_tests {
     use super::*;
+    use crate::ZeroRttStatus;
 
     fn measure_http11(
         input: &str,
@@ -469,6 +470,36 @@ mod network_tests {
             let outcome = client.measure(url).unwrap();
             assert_eq!(outcome.protocol(), HttpProtocol::Http2, "{url}");
             assert!(outcome.tls_handshake_duration().is_some(), "{url}");
+        }
+    }
+
+    /// These websites accept TLS 1.3 early data. They may change their
+    /// configuration, so a failure can also mean that this list needs an
+    /// update.
+    #[test]
+    fn well_known_websites_accept_zero_rtt() {
+        let mut protocols = vec![HttpProtocol::Http11];
+        if cfg!(feature = "http2") {
+            protocols.push(HttpProtocol::Http2);
+        }
+        for protocol in protocols {
+            let client = TtfbClient::new(TtfbOptions {
+                protocol: ProtocolSelection::Only(protocol),
+                zero_rtt: true,
+                ..TtfbOptions::default()
+            });
+            for url in [
+                "https://www.google.com",
+                "https://www.facebook.com",
+                "https://www.fastly.com",
+            ] {
+                let outcome = client.measure(url).unwrap();
+                assert_eq!(
+                    outcome.zero_rtt_status(),
+                    Some(ZeroRttStatus::Accepted),
+                    "{url} {protocol:?}"
+                );
+            }
         }
     }
 }
