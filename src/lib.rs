@@ -39,6 +39,7 @@ use std::time::{Duration, Instant};
 use url::Url;
 
 mod error;
+mod http11;
 mod outcome;
 
 const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -216,7 +217,7 @@ fn execute_http_get(
     tcp: &mut Box<dyn IoReadAndWrite>,
     url: &Url,
 ) -> Result<(Duration, Duration), TtfbError> {
-    let header = build_http11_header(url);
+    let header = http11::build_request(url);
     let now = Instant::now();
     tcp.write_all(header.as_bytes())
         .map_err(TtfbError::CantConnectHttp)?;
@@ -241,25 +242,6 @@ fn execute_http_get(
         http_ttfb_duration,
         // http_content_download_duration,
     ))
-}
-
-/// Constructs the header for a HTTP/1.1 GET-Request.
-///
-/// Sets the following default headers:
-/// - `Accept-Encoding: gzip, deflate, br, zstd` (default of Chrome v123)
-/// - `User-Agent: ttfb/<version>`
-fn build_http11_header(url: &Url) -> String {
-    format!(
-        "GET {path} HTTP/1.1\r\n\
-        Host: {host}\r\n\
-        User-Agent: ttfb/{version}\r\n\
-        Accept: */*\r\n\
-        Accept-Encoding: gzip, deflate, br, zstd\r\n\
-        \r\n",
-        path = url.path(),
-        host = url.host_str().unwrap(),
-        version = CRATE_VERSION
-    )
 }
 
 /// Parses the string input into an [`Url`] object.
