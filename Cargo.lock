@@ -1423,9 +1423,11 @@ dependencies = [
  "httparse",
  "rustls",
  "rustls-connector",
+ "rustls-native-certs",
  "thiserror 2.0.12",
  "tokio",
  "url",
+ "webpki-roots",
 ]
 
 [[package]]
