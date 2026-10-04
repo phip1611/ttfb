@@ -95,7 +95,8 @@ pub fn ttfb(
     // implementation will either send plain text or encrypt it for TLS.
     let (mut tcp, tls_handshake_duration) =
         tls_handshake_if_necessary(tcp, &url, allow_insecure_certificates)?;
-    let (http_get_send_duration, http_ttfb_duration) = execute_http_get(&mut tcp, &url)?;
+    let (http_get_send_duration, http_ttfb_duration, http_content_download_duration) =
+        execute_http_get(&mut tcp, &url)?;
 
     Ok(TtfbOutcome::new(
         input,
@@ -106,7 +107,7 @@ pub fn ttfb(
         tls_handshake_duration,
         http_get_send_duration,
         http_ttfb_duration,
-        // http_content_download_duration,
+        http_content_download_duration,
     ))
 }
 
@@ -216,7 +217,7 @@ impl ServerCertVerifier for AllowInvalidCertsVerifier {
 fn execute_http_get(
     tcp: &mut Box<dyn IoReadAndWrite>,
     url: &Url,
-) -> Result<(Duration, Duration), TtfbError> {
+) -> Result<(Duration, Duration, Duration), TtfbError> {
     let header = http11::build_request(url);
     let now = Instant::now();
     tcp.write_all(header.as_bytes())
@@ -228,15 +229,15 @@ fn execute_http_get(
     tcp.read_exact(&mut one_byte_buf)
         .map_err(|_e| TtfbError::NoHttpResponse)?;
     let http_ttfb_duration = now.elapsed();
-
+    let now = Instant::now();
     // Read the rest of the response until the server closes the connection.
     let mut buffer = [0_u8; HTTP11_READ_BUFFER_SIZE];
     while tcp.read(&mut buffer).map_err(TtfbError::CantConnectHttp)? != /* EOF */ 0 {}
-
+    let http_content_download_duration = now.elapsed();
     Ok((
         get_request_send_duration,
         http_ttfb_duration,
-        // http_content_download_duration,
+        http_content_download_duration,
     ))
 }
 

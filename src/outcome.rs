@@ -56,7 +56,8 @@ pub struct TtfbOutcome {
     /// The relative duration until the first byte from the HTTP response (the header) was
     /// received.
     http_ttfb_duration_rel: Duration,
-    // http_content_download_duration: Duration,
+    /// The relative duration from the first response byte until the complete response.
+    http_content_download_duration_rel: Duration,
 }
 
 impl TtfbOutcome {
@@ -70,7 +71,7 @@ impl TtfbOutcome {
         tls_handshake_duration_rel: Option<Duration>,
         http_get_send_duration_rel: Duration,
         http_ttfb_duration_rel: Duration,
-        // http_content_download_duration: Duration,
+        http_content_download_duration_rel: Duration,
     ) -> Self {
         Self {
             user_input,
@@ -81,7 +82,7 @@ impl TtfbOutcome {
             tls_handshake_duration_rel,
             http_get_send_duration_rel,
             http_ttfb_duration_rel,
-            // http_content_download_duration,
+            http_content_download_duration_rel,
         }
     }
 
@@ -140,6 +141,13 @@ impl TtfbOutcome {
         let abs_dur_so_far = self.http_get_send_duration().total();
         DurationPair::new(self.http_ttfb_duration_rel, abs_dur_so_far)
     }
+
+    /// Returns the time from the first response byte until the complete response message.
+    #[must_use]
+    pub fn http_content_download_duration(&self) -> DurationPair {
+        let abs_dur_so_far = self.ttfb_duration().total();
+        DurationPair::new(self.http_content_download_duration_rel, abs_dur_so_far)
+    }
 }
 
 #[cfg(test)]
@@ -159,6 +167,7 @@ mod tests {
             Some(Duration::from_millis(3)),
             Duration::from_millis(4),
             Duration::from_millis(5),
+            Duration::from_millis(6),
         );
         assert_eq!(
             outcome.dns_lookup_duration().unwrap().total().as_millis(),
@@ -189,6 +198,11 @@ mod tests {
             outcome.ttfb_duration().total().as_millis(),
             1 + 2 + 3 + 4 + 5,
             "Total TTFB: DNS + TCP connect + TLS handshake + HTTP GET send + relative TTFB"
+        );
+        assert_eq!(
+            outcome.http_content_download_duration().total().as_millis(),
+            1 + 2 + 3 + 4 + 5 + 6,
+            "Total response completion time"
         );
     }
 }
