@@ -92,10 +92,16 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         url = ttfb.user_input(),
         crate_version = CRATE_VERSION
     );
+    let selection = match ttfb.protocol_selection() {
+        ProtocolSelection::Auto => " (selected automatically)",
+        ProtocolSelection::Only(_) => "",
+    };
+    println!("Protocol: {}{selection}", ttfb.protocol());
     println!("PROPERTY        REL TIME (ms)   ABS TIME (ms)");
     stdout()
         .execute(SetAttribute(Attribute::Reset))
         .map_err(|err| err.to_string())?;
+
     if let Some(duration_pair) = ttfb.dns_lookup_duration() {
         // For DNS, abs and rel time is the same (because it happens first).
         let duration = duration_pair.relative().as_secs_f64() * 1000.0;
@@ -141,6 +147,16 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         property = "HTTP Resp TTFB",
         rel_time = ttfb.ttfb_duration().relative().as_secs_f64() * 1000.0,
         abs_time = ttfb.ttfb_duration().total().as_secs_f64() * 1000.0,
+    );
+    println!(
+        "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
+        property = "HTTP Download",
+        rel_time = ttfb
+            .http_content_download_duration()
+            .relative()
+            .as_secs_f64()
+            * 1000.0,
+        abs_time = ttfb.http_content_download_duration().total().as_secs_f64() * 1000.0,
     );
     stdout()
         .execute(SetAttribute(Attribute::Reset))

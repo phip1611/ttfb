@@ -43,7 +43,7 @@ only change something for the binary.
 
 ## ttfb binary
 
--
+- The output shows the HTTP protocol and the download of the response.
 
 # v1.15.0 (2025-04-02)
 
