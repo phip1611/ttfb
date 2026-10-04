@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 use ttfb::TtfbError;
 
 /// This test succeeds if `ttfb::ttfb()` doesn't raise a panic.

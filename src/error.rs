@@ -1,53 +1,22 @@
-/*
-MIT License
+// SPDX-License-Identifier: MIT
 
-Copyright (c) 2024 Philipp Schuster
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
 //! Module for [`TtfbError`].
 
-use derive_more::Display;
 use hickory_resolver::{ResolveError, ResolveErrorKind};
 use rustls_connector::HandshakeError;
-use std::error::Error;
 use std::io;
 use std::net::TcpStream;
+use thiserror::Error;
 
 /// Errors during DNS resolving.
-#[derive(Clone, Debug, Display)]
+#[derive(Clone, Debug, Error)]
 pub enum ResolveDnsError {
     /// Can't find DNS entry for the given host.
-    #[display("Can't find DNS entry for the given host.")]
+    #[error("Can't find DNS entry for the given host.")]
     NoResults,
     /// Couldn't resolve DNS for given host.
-    #[display("Couldn't resolve DNS for given host because: {}", _0)]
-    Other(Box<ResolveError>),
-}
-
-impl Error for ResolveDnsError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Other(err) => Some(err),
-            Self::NoResults => None,
-        }
-    }
+    #[error("Couldn't resolve DNS for given host because: {0}")]
+    Other(#[source] Box<ResolveError>),
 }
 
 impl PartialEq for ResolveDnsError {
@@ -70,72 +39,54 @@ impl PartialEq for ResolveDnsError {
 }
 
 /// Errors during URL parsing.
-#[derive(Clone, Debug, Display, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Error, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum InvalidUrlError {
     /// No input was provided. Provide a URL, such as <https://example.com> or <https://1.2.3.4:443>.
-    #[display(
+    #[error(
         "No input was provided. Provide a URL, such as https://example.com or https://1.2.3.4:443"
     )]
     MissingInput,
     /// The URL is illegal.
-    #[display("The URL is illegal because: {}", _0)]
+    #[error("The URL is illegal because: {0}")]
     WrongFormat(String),
     /// Wrong scheme. Only supports http and https.
-    #[display("Wrong scheme '{}://': Only supports http and https.", _0)]
+    #[error("Wrong scheme '{0}://': Only supports http and https.")]
     WrongScheme(String),
     /// Other unknown error.
-    #[display("Other unknown error.")]
+    #[error("Other unknown error.")]
     Other,
 }
 
-impl Error for InvalidUrlError {}
-
 /// Errors of the public interface of this crate.
-#[derive(Debug, Display)]
+#[derive(Debug, Error)]
 pub enum TtfbError {
     /// Invalid URL
-    #[display("Invalid URL: {}", _0)]
-    InvalidUrl(InvalidUrlError),
+    #[error("Invalid URL: {0}")]
+    InvalidUrl(#[source] InvalidUrlError),
     /// Can't resolve DNS.
-    #[display("Can't resolve DNS because: {}", _0)]
-    CantResolveDns(ResolveDnsError),
+    #[error("Can't resolve DNS because: {0}")]
+    CantResolveDns(#[source] ResolveDnsError),
     /// Can't establish TCP-Connection.
-    #[display("Can't establish TCP-Connection because: {}", _0)]
-    CantConnectTcp(io::Error),
+    #[error("Can't establish TCP-Connection because: {0}")]
+    CantConnectTcp(#[source] io::Error),
     /// Can't establish TLS-Connection.
-    #[display("Can't establish TLS-Connection because: {}", _0)]
-    CantConnectTls(Box<HandshakeError<TcpStream>>),
+    #[error("Can't establish TLS-Connection because: {0}")]
+    CantConnectTls(#[source] Box<HandshakeError<TcpStream>>),
     /// Can't verify TLS-Connection.
-    #[display("Can't verify TLS-Connection because: {}", _0)]
-    CantVerifyTls(Box<HandshakeError<TcpStream>>),
+    #[error("Can't verify TLS-Connection because: {0}")]
+    CantVerifyTls(#[source] Box<HandshakeError<TcpStream>>),
     /// Can't establish HTTP/1.1-Connection.
-    #[display("Can't establish HTTP/1.1-Connection because: {}", _0)]
-    CantConnectHttp(io::Error),
+    #[error("Can't establish HTTP/1.1-Connection because: {0}")]
+    CantConnectHttp(#[source] io::Error),
     /// Didn't receive any data after sending the HTTP GET request.
-    #[display("Didn't receive any data. Is the host running a HTTP server?")]
+    #[error("Didn't receive any data. Is the host running a HTTP server?")]
     NoHttpResponse,
     /// There was a problem with the TCP stream.
-    #[display("There was a problem with the TCP stream because: {}", _0)]
-    OtherStreamError(io::Error),
+    #[error("There was a problem with the TCP stream because: {0}")]
+    OtherStreamError(#[source] io::Error),
     /// Can't configure trust-dns-resolver configuration.
-    #[display("Failed to configure DNS based on system or default settings: {_0}")]
-    CantConfigureDNSError(ResolveError),
-}
-
-impl Error for TtfbError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::InvalidUrl(err) => Some(err),
-            Self::CantResolveDns(err) => Some(err),
-            Self::CantConnectTls(err) => Some(err),
-            Self::CantConnectTcp(err) => Some(err),
-            Self::OtherStreamError(err) => Some(err),
-            Self::CantConnectHttp(err) => Some(err),
-            Self::NoHttpResponse => None,
-            Self::CantConfigureDNSError(err) => Some(err),
-            Self::CantVerifyTls(err) => Some(err),
-        }
-    }
+    #[error("Failed to configure DNS based on system or default settings: {0}")]
+    CantConfigureDNSError(#[source] ResolveError),
 }
 
 impl PartialEq for TtfbError {
