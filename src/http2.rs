@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn requires_https() {
         let target = Target::resolve("http://localhost:1").unwrap();
-        let result = run_in_tokio(measure(&target, tls::config(false)));
+        let result = run_in_tokio(measure(&target, tls::config(false, false)));
         assert!(matches!(result, Err(TtfbError::UnsupportedHttpProtocol(_))));
     }
 }

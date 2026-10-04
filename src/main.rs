@@ -64,6 +64,7 @@ fn main() {
     let client = TtfbClient::new(TtfbOptions {
         protocol: ProtocolSelection::Only(HttpProtocol::Http11),
         allow_insecure_certificates: input.allow_insecure_certificates,
+        ..TtfbOptions::default()
     });
     let res = client.measure(input.host);
     let ttfb = unwrap_or_exit!(res);
