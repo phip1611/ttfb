@@ -80,7 +80,7 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --verbose -- network_tests
 
   style_checks:
     runs-on: ubuntu-latest

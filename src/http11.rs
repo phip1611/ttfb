@@ -17,6 +17,19 @@ const TRANSFER_ENCODING: &str = "transfer-encoding";
 
 type Headers = Vec<(String, String)>;
 
+/// How the end of a response body was determined.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Framing {
+    /// The status code implies that there is no body.
+    NoBody,
+    /// Chunked transfer coding.
+    Chunked,
+    /// A `Content-Length` header.
+    ContentLength,
+    /// The server closed the connection.
+    CloseDelimited,
+}
+
 /// Constructs the header for a HTTP/1.1 GET-Request.
 ///
 /// Sets the following default headers:
@@ -37,7 +50,9 @@ pub fn build_request(url: &Url) -> String {
 }
 
 /// Reads one complete HTTP/1.1 response after its first byte has already arrived.
-pub fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<(), TtfbError> {
+///
+/// Returns how the end of the body was determined.
+pub fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<Framing, TtfbError> {
     let mut response = vec![first_byte];
     let (head_len, status, headers) = loop {
         let (head_len, status, headers) = read_head(tcp, &mut response)?;
@@ -53,7 +68,7 @@ pub fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<(),
 
     // Responses with these status codes never have a body.
     if (100..200).contains(&status) || status == 204 || status == 304 {
-        return Ok(());
+        return Ok(Framing::NoBody);
     }
 
     // The last transfer coding decides whether the body is chunked.
@@ -65,7 +80,7 @@ pub fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<(),
         .next_back()
         .is_some_and(|coding| coding.eq_ignore_ascii_case("chunked"));
     if transfer_is_chunked {
-        return read_chunked_body(tcp, body);
+        return read_chunked_body(tcp, body).map(|()| Framing::Chunked);
     }
 
     // A fixed-length body ends after Content-Length bytes.
@@ -84,7 +99,7 @@ pub fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<(),
                 .map_err(TtfbError::CantConnectHttp)?;
             remaining -= count;
         }
-        return Ok(());
+        return Ok(Framing::ContentLength);
     }
 
     // Without explicit framing, the body ends when the server closes the connection.
@@ -92,7 +107,7 @@ pub fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<(),
     loop {
         let read = tcp.read(&mut buffer).map_err(TtfbError::CantConnectHttp)?;
         if read == /* EOF */ 0 {
-            return Ok(());
+            return Ok(Framing::CloseDelimited);
         }
     }
 }
@@ -238,7 +253,7 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    fn parse_response(response: &[u8]) -> Result<(), TtfbError> {
+    fn parse_response(response: &[u8]) -> Result<Framing, TtfbError> {
         let mut stream = Cursor::new(response[1..].to_vec());
         read_response(&mut stream, response[0])
     }
@@ -247,7 +262,7 @@ mod tests {
     fn reads_fixed_length_response() {
         assert_eq!(
             parse_response(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello"),
-            Ok(())
+            Ok(Framing::ContentLength)
         );
     }
 
@@ -260,18 +275,24 @@ mod tests {
             parse_response(
                 b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\nChecksum: valid\r\n\r\n",
             ),
-            Ok(())
+            Ok(Framing::Chunked)
         );
     }
 
     #[test]
     fn reads_close_delimited_response() {
-        assert_eq!(parse_response(b"HTTP/1.1 200 OK\r\n\r\nhello"), Ok(()));
+        assert_eq!(
+            parse_response(b"HTTP/1.1 200 OK\r\n\r\nhello"),
+            Ok(Framing::CloseDelimited)
+        );
     }
 
     #[test]
     fn reads_response_without_body() {
-        assert_eq!(parse_response(b"HTTP/1.1 204 No Content\r\n\r\n"), Ok(()));
+        assert_eq!(
+            parse_response(b"HTTP/1.1 204 No Content\r\n\r\n"),
+            Ok(Framing::NoBody)
+        );
     }
 
     #[test]
@@ -280,7 +301,7 @@ mod tests {
             parse_response(
                 b"HTTP/1.1 103 Early Hints\r\nLink: </style.css>\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
             ),
-            Ok(())
+            Ok(Framing::ContentLength)
         );
     }
 
@@ -304,5 +325,57 @@ mod tests {
         assert!(request.starts_with("GET /path?query=yes HTTP/1.1\r\n"));
         assert!(request.contains("\r\nHost: localhost:8080\r\n"));
         assert!(!request.contains("fragment"));
+    }
+}
+
+/// Checks the response framing of well-known websites. Sites may change how
+/// they frame responses, so a failure can also mean that this list needs an
+/// update.
+#[cfg(all(test, network_tests))]
+mod network_tests {
+    use super::*;
+    use crate::{resolve_dns_if_necessary, tcp_connect, tls_handshake_if_necessary};
+
+    /// Requests `url` and returns how the response body was framed.
+    fn framing_of(url: &str) -> Result<Framing, TtfbError> {
+        let url = Url::parse(url).unwrap();
+        let (address, _) = resolve_dns_if_necessary(&url)?;
+        let (tcp, _) = tcp_connect(address, url.port_or_known_default().unwrap())?;
+        let (mut stream, _) = tls_handshake_if_necessary(tcp, &url, false)?;
+        stream
+            .write_all(build_request(&url).as_bytes())
+            .map_err(TtfbError::CantConnectHttp)?;
+        let mut first_byte = [0];
+        stream
+            .read_exact(&mut first_byte)
+            .map_err(|_| TtfbError::NoHttpResponse)?;
+        read_response(stream.as_mut(), first_byte[0])
+    }
+
+    #[test]
+    fn well_known_websites_cover_all_framings() {
+        let cases = [
+            ("https://example.com", Framing::Chunked),
+            ("https://github.com", Framing::Chunked),
+            // Bodies that need further reads after the response head.
+            ("https://rust-lang.org", Framing::ContentLength),
+            ("https://duckduckgo.com", Framing::ContentLength),
+            ("https://fedoraproject.org", Framing::ContentLength),
+            // Redirects with `Content-Length: 0`.
+            ("http://github.com", Framing::ContentLength),
+            ("http://crates.io", Framing::ContentLength),
+            ("https://un.org", Framing::CloseDelimited),
+            ("http://vercel.com", Framing::CloseDelimited),
+            ("https://httpbin.org/status/204", Framing::NoBody),
+        ];
+        let failures = cases
+            .iter()
+            .filter_map(|(url, expected)| {
+                let actual = framing_of(url);
+                (actual.as_ref() != Ok(expected))
+                    .then(|| format!("{url}: expected {expected:?}, got {actual:?}"))
+            })
+            .collect::<Vec<_>>();
+        assert!(failures.is_empty(), "{failures:#?}");
     }
 }
