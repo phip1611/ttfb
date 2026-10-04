@@ -348,17 +348,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e5c1b78ca4aae1ac06c48a526a655760685149f0d465d21f37abfe57ce075c6"
 
 [[package]]
-name = "futures-rustls"
-version = "0.26.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8f2f12607f92c69b12ed746fabf9ca4f5c482cba46679c1a75b874ed7c26adb"
-dependencies = [
- "futures-io",
- "rustls",
- "rustls-pki-types",
-]
-
-[[package]]
 name = "futures-task"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1008,21 +997,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustls-connector"
-version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f510f2d983baf4a45354ae8ca5abf5a6cdb3c47244ea22f705499d6d9c09a912"
-dependencies = [
- "futures-rustls",
- "log",
- "rustls",
- "rustls-native-certs",
- "rustls-pki-types",
- "rustls-webpki",
- "webpki-roots",
-]
-
-[[package]]
 name = "rustls-native-certs"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1422,7 +1396,6 @@ dependencies = [
  "hickory-resolver",
  "httparse",
  "rustls",
- "rustls-connector",
  "rustls-native-certs",
  "thiserror 2.0.12",
  "tokio",

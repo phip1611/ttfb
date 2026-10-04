@@ -335,13 +335,13 @@ mod tests {
 mod network_tests {
     use super::*;
     use crate::target::Target;
-    use crate::{tcp_connect, tls_handshake_if_necessary};
+    use crate::{tcp_connect, tls, tls_handshake_if_necessary};
 
     /// Requests `url` and returns how the response body was framed.
     fn framing_of(url: &str) -> Result<Framing, TtfbError> {
         let target = Target::resolve(url)?;
         let (tcp, _) = tcp_connect(target.address, target.port)?;
-        let (mut stream, _) = tls_handshake_if_necessary(tcp, &target.url, false)?;
+        let (mut stream, _) = tls_handshake_if_necessary(tcp, &target.url, tls::config(false))?;
         stream
             .write_all(build_request(&target.url).as_bytes())
             .map_err(TtfbError::CantConnectHttp)?;

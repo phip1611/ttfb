@@ -8,9 +8,15 @@ only change something for the binary.
 
 ## ttfb lib
 
-- `TtfbError::CantConnectTls` and `TtfbError::CantVerifyTls` have their
-  `<HandshakeError<TcpStream>>` payload now wrapped in a `Box`, as it is
-  quite large.
+- **BREAKING** `TtfbError::CantConnectTls` and `TtfbError::CantVerifyTls`
+  are replaced by `TtfbError::Tls`, which describes the error as a string.
+  The lib no longer depends on `rustls-connector`.
+- **BREAKING** `AllowInvalidCertsVerifier` is no longer public. It was
+  exported by accident.
+- TLS trusts the system's root certificates and the bundled Mozilla root
+  certificates together. Previously, the bundled ones were only used if the
+  system's could not be loaded.
+- HTTPS works with IPv6 addresses, such as `https://[2606:4700:4700::1111]`.
 
 ## ttfb binary
 

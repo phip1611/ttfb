@@ -3,9 +3,7 @@
 //! Module for [`TtfbError`].
 
 use hickory_resolver::{ResolveError, ResolveErrorKind};
-use rustls_connector::HandshakeError;
 use std::io;
-use std::net::TcpStream;
 use thiserror::Error;
 
 /// Errors during DNS resolving.
@@ -69,12 +67,9 @@ pub enum TtfbError {
     /// Can't establish TCP-Connection.
     #[error("Can't establish TCP-Connection because: {0}")]
     CantConnectTcp(#[source] io::Error),
-    /// Can't establish TLS-Connection.
+    /// Can't establish TLS-Connection, e.g., because the certificate is invalid.
     #[error("Can't establish TLS-Connection because: {0}")]
-    CantConnectTls(#[source] Box<HandshakeError<TcpStream>>),
-    /// Can't verify TLS-Connection.
-    #[error("Can't verify TLS-Connection because: {0}")]
-    CantVerifyTls(#[source] Box<HandshakeError<TcpStream>>),
+    Tls(String),
     /// Can't establish HTTP/1.1-Connection.
     #[error("Can't establish HTTP/1.1-Connection because: {0}")]
     CantConnectHttp(#[source] io::Error),
@@ -98,16 +93,7 @@ impl PartialEq for TtfbError {
             (Self::InvalidUrl(e1), Self::InvalidUrl(e2)) => e1.eq(e2),
             (Self::CantResolveDns(e1), Self::CantResolveDns(e2)) => e1.eq(e2),
             (Self::CantConnectTcp(e1), Self::CantConnectTcp(e2)) => e1.kind().eq(&e2.kind()),
-            (Self::CantConnectTls(_e1), Self::CantConnectTls(_e2)) => {
-                // nah, ignore it. Proper deep check is too complex.
-                // Shortcut is good enough for the sake of the library.
-                true
-            }
-            (Self::CantVerifyTls(_e1), Self::CantVerifyTls(_e2)) => {
-                // nah, ignore it. Proper deep check is too complex.
-                // Shortcut is good enough for the sake of the library.
-                true
-            }
+            (Self::Tls(e1), Self::Tls(e2)) => e1.eq(e2),
             (Self::CantConnectHttp(e1), Self::OtherStreamError(e2)) => e1.kind().eq(&e2.kind()),
             (Self::CantConfigureDNSError(_e1), Self::CantConfigureDNSError(_e2)) => {
                 // nah, ignore it. Proper deep check is too complex.

@@ -25,10 +25,7 @@
 pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
 pub use outcome::{DurationPair, TtfbOutcome};
 
-use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-use rustls::{ClientConfig, DigitallySignedStruct, Error, SignatureScheme};
-use rustls_connector::RustlsConnector;
+use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{IpAddr, TcpStream};
 use std::sync::Arc;
@@ -40,6 +37,7 @@ mod error;
 mod http11;
 mod outcome;
 mod target;
+mod tls;
 
 const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -82,7 +80,7 @@ pub fn ttfb(
     // We can write to the "tcp" trait object whatever content we want to. The underlying
     // implementation will either send plain text or encrypt it for TLS.
     let (mut tcp, tls_handshake_duration) =
-        tls_handshake_if_necessary(tcp, &target.url, allow_insecure_certificates)?;
+        tls_handshake_if_necessary(tcp, &target.url, tls::config(allow_insecure_certificates))?;
     let (http_get_send_duration, http_ttfb_duration, http_content_download_duration) =
         execute_http_get(&mut tcp, &target.url)?;
 
@@ -110,93 +108,28 @@ fn tcp_connect(addr: IpAddr, port: u16) -> Result<(TcpStream, Duration), TtfbErr
 }
 
 /// If the scheme is "https", this replaces the TCP-Stream with a `TLS<TCP>`-stream.
-/// All data will be encrypted using the TLS-functionality of the crate `native-tls`.
 /// If TLS is used, it measures the time of the TLS handshake.
 fn tls_handshake_if_necessary(
-    tcp: TcpStream,
+    mut tcp: TcpStream,
     url: &Url,
-    allow_insecure_certificates: bool,
+    tls_config: Arc<ClientConfig>,
 ) -> Result<(Box<dyn IoReadAndWrite>, Option<Duration>), TtfbError> {
     if url.scheme() == "https" {
-        let connector: RustlsConnector = if allow_insecure_certificates {
-            ClientConfig::builder()
-                .dangerous()
-                .with_custom_certificate_verifier(Arc::new(AllowInvalidCertsVerifier))
-                .with_no_client_auth()
-                .into()
-        } else {
-            RustlsConnector::new_with_native_certs()
-                .unwrap_or_else(|_| RustlsConnector::new_with_webpki_roots_certs())
-        };
+        let server_name = tls::server_name(url)?;
         let now = Instant::now();
-
-        // hostname not used for DNS, only for certificate validation
-        // can also be a IP address, because Certificates can have the IP-Address in
-        // the "cert subject alternative name" field.
-        let certificate_host = url.host_str().unwrap_or("");
-        let mut stream = connector
-            .connect(certificate_host, tcp)
-            .map_err(Box::new)
-            .map_err(TtfbError::CantVerifyTls)?;
-        stream.flush().map_err(TtfbError::OtherStreamError)?;
+        let mut connection = ClientConnection::new(tls_config, server_name)
+            .map_err(|error| TtfbError::Tls(error.to_string()))?;
+        // Performs IO until the handshake is complete.
+        connection
+            .complete_io(&mut tcp)
+            .map_err(|error| TtfbError::Tls(error.to_string()))?;
         let tls_handshake_duration = now.elapsed();
-        Ok((Box::new(stream), Some(tls_handshake_duration)))
+        Ok((
+            Box::new(StreamOwned::new(connection, tcp)),
+            Some(tls_handshake_duration),
+        ))
     } else {
         Ok((Box::new(tcp), None))
-    }
-}
-
-/// Custom verifier that allows invalid certificates.
-#[derive(Debug)]
-pub struct AllowInvalidCertsVerifier;
-
-impl ServerCertVerifier for AllowInvalidCertsVerifier {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _server_name: &ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: UnixTime,
-    ) -> Result<ServerCertVerified, Error> {
-        Ok(ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, Error> {
-        Ok(HandshakeSignatureValid::assertion())
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, Error> {
-        Ok(HandshakeSignatureValid::assertion())
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        // Return a list of all.
-        vec![
-            SignatureScheme::RSA_PKCS1_SHA1,
-            SignatureScheme::ECDSA_SHA1_Legacy,
-            SignatureScheme::RSA_PKCS1_SHA256,
-            SignatureScheme::ECDSA_NISTP256_SHA256,
-            SignatureScheme::RSA_PKCS1_SHA384,
-            SignatureScheme::ECDSA_NISTP384_SHA384,
-            SignatureScheme::RSA_PKCS1_SHA512,
-            SignatureScheme::ECDSA_NISTP521_SHA512,
-            SignatureScheme::RSA_PSS_SHA256,
-            SignatureScheme::RSA_PSS_SHA384,
-            SignatureScheme::RSA_PSS_SHA512,
-            SignatureScheme::ED25519,
-            SignatureScheme::ED448,
-        ]
     }
 }
 
