@@ -218,4 +218,21 @@ mod network_tests {
             assert!(has_tls_handshake(&outcome), "{url}");
         }
     }
+
+    #[cfg(feature = "http3")]
+    #[test]
+    fn measures_well_known_http3_websites() {
+        let client = TtfbClient::new(TtfbOptions {
+            protocol: ProtocolSelection::Only(HttpProtocol::Http3),
+            ..TtfbOptions::default()
+        });
+        for url in ["https://www.google.com", "https://www.cloudflare.com"] {
+            let outcome = client.measure(url).unwrap();
+            assert_eq!(outcome.protocol(), HttpProtocol::Http3, "{url}");
+            assert!(
+                matches!(outcome.connection_handshake(), ConnectionHandshake::Quic(_)),
+                "{url}"
+            );
+        }
+    }
 }
