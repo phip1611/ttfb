@@ -116,6 +116,97 @@ impl TtfbClient {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ZeroRttStatus;
+    use rustls::pki_types::PrivatePkcs8KeyDer;
+    use rustls::{ServerConfig, ServerConnection};
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+
+    /// Serves a warm-up and a measured HTTP/1.1 request over TLS. The second
+    /// connection either accepts the early data or rejects it.
+    fn serve_http11_zero_rtt(reject: bool) -> (u16, thread::JoinHandle<()>) {
+        let certificate = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+        let certificate_der = certificate.cert.der().clone();
+        let key = PrivatePkcs8KeyDer::from(certificate.key_pair.serialize_der());
+        let mut config =
+            ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                .with_safe_default_protocol_versions()
+                .unwrap()
+                .with_no_client_auth()
+                .with_single_cert(vec![certificate_der], key.into())
+                .unwrap();
+        config.max_early_data_size = 16 * 1024;
+        let config = Arc::new(config);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            for request_number in 0..2 {
+                let (mut socket, _) = listener.accept().unwrap();
+                let mut connection = ServerConnection::new(Arc::clone(&config)).unwrap();
+                if reject && request_number == 1 {
+                    connection.reject_early_data();
+                }
+                connection.complete_io(&mut socket).unwrap();
+                let mut request = Vec::new();
+                if let Some(mut early_data) = connection.early_data() {
+                    early_data.read_to_end(&mut request).unwrap();
+                }
+                let mut stream = rustls::Stream::new(&mut connection, &mut socket);
+                while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    let mut buffer = [0; 1024];
+                    let Ok(read) = stream.read(&mut buffer) else {
+                        break;
+                    };
+                    if read == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&buffer[..read]);
+                }
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    stream
+                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                        .unwrap();
+                    stream.flush().unwrap();
+                }
+            }
+        });
+        (port, server)
+    }
+
+    fn zero_rtt_client() -> TtfbClient {
+        TtfbClient::new(TtfbOptions {
+            protocol: ProtocolSelection::Only(HttpProtocol::Http11),
+            allow_insecure_certificates: true,
+            zero_rtt: true,
+        })
+    }
+
+    #[test]
+    fn http11_zero_rtt_is_accepted_after_warmup() {
+        let (port, server) = serve_http11_zero_rtt(false);
+        let outcome = zero_rtt_client()
+            .measure(format!("https://localhost:{port}/"))
+            .unwrap();
+        assert_eq!(outcome.zero_rtt_status(), Some(ZeroRttStatus::Accepted));
+        assert!(outcome.zero_rtt_duration().is_some());
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn http11_zero_rtt_rejection_replays_request() {
+        let (port, server) = serve_http11_zero_rtt(true);
+        let outcome = zero_rtt_client()
+            .measure(format!("https://localhost:{port}/"))
+            .unwrap();
+        assert_eq!(outcome.zero_rtt_status(), Some(ZeroRttStatus::Replayed));
+        server.join().unwrap();
+    }
+}
+
 /// Tests that rely on an external network connection.
 #[cfg(all(test, network_tests))]
 mod network_tests {

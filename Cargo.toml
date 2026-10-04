@@ -88,6 +88,9 @@ features = [
   "rt",
 ]
 
+[dev-dependencies]
+rcgen = "0.13.2"
+
 [lints.rust]
 # level is probably irrelevant
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(network_tests)'] }
