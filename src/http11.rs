@@ -5,6 +5,8 @@
 use crate::outcome::{Connect, TtfbTimings};
 use crate::target::Target;
 use crate::{CRATE_VERSION, HttpProtocol, TtfbError, TtfbOutcome, tls};
+use http::header::{CONTENT_LENGTH, TRANSFER_ENCODING};
+use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{IpAddr, TcpStream};
@@ -17,12 +19,6 @@ const READ_BUFFER_SIZE: usize = 8 * 1024;
 /// Upper bound for the response head. RFC 9112 sets no limit; this is an
 /// arbitrary guard against unbounded buffering.
 const MAX_HEAD_SIZE: usize = 64 * 1024;
-
-// Header names in lowercase, as normalized by `read_head`.
-const CONTENT_LENGTH: &str = "content-length";
-const TRANSFER_ENCODING: &str = "transfer-encoding";
-
-type Headers = Vec<(String, String)>;
 
 /// Trait that combines [`IoWrite`] and [`IoRead`].
 ///
@@ -71,7 +67,7 @@ fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<Framing
     let (head_len, status, headers) = loop {
         let (head_len, status, headers) = read_head(tcp, &mut response)?;
         // Skip interim responses. 101 Switching Protocols is a final response.
-        if (100..200).contains(&status) && status != 101 {
+        if status.is_informational() && status != StatusCode::SWITCHING_PROTOCOLS {
             // The buffer may already hold (parts of) the next response.
             response.drain(..head_len);
         } else {
@@ -81,18 +77,26 @@ fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<Framing
     let body = response.split_off(head_len);
 
     // Responses with these status codes never have a body.
-    if (100..200).contains(&status) || status == 204 || status == 304 {
+    if status.is_informational()
+        || status == StatusCode::NO_CONTENT
+        || status == StatusCode::NOT_MODIFIED
+    {
         return Ok(Framing::NoBody);
     }
 
     // The last transfer coding decides whether the body is chunked.
     let transfer_is_chunked = headers
+        .get_all(TRANSFER_ENCODING)
         .iter()
-        .filter(|(name, _)| name == TRANSFER_ENCODING)
-        .flat_map(|(_, value)| value.split(','))
-        .map(str::trim)
         .next_back()
-        .is_some_and(|coding| coding.eq_ignore_ascii_case("chunked"));
+        .map(|value| {
+            value.to_str().map_err(|_| {
+                TtfbError::InvalidHttpResponse("response has an invalid Transfer-Encoding".into())
+            })
+        })
+        .transpose()?
+        .and_then(|value| value.rsplit(',').next())
+        .is_some_and(|coding| coding.trim().eq_ignore_ascii_case("chunked"));
     if transfer_is_chunked {
         return read_chunked_body(tcp, body).map(|()| Framing::Chunked);
     }
@@ -130,28 +134,31 @@ fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<Framing
 fn read_head(
     tcp: &mut dyn IoReadAndWrite,
     response: &mut Vec<u8>,
-) -> Result<(usize, u16, Headers), TtfbError> {
+) -> Result<(usize, StatusCode, HeaderMap), TtfbError> {
     loop {
         let mut headers = [httparse::EMPTY_HEADER; 64];
         let mut parsed = httparse::Response::new(&mut headers);
         match parsed.parse(response) {
             Ok(httparse::Status::Complete(head_len)) => {
-                let status = parsed.code.ok_or_else(|| {
-                    TtfbError::InvalidHttpResponse("response does not contain a status code".into())
-                })?;
-                // All header names as lowercase UTF-8 with trimmed UTF-8 content.
-                let headers = parsed
-                    .headers
-                    .iter()
-                    .map(|header| {
-                        let value = std::str::from_utf8(header.value).map_err(|_| {
-                            TtfbError::InvalidHttpResponse(
-                                "response contains a non-UTF-8 header value".into(),
-                            )
-                        })?;
-                        Ok((header.name.to_ascii_lowercase(), value.trim().to_owned()))
-                    })
-                    .collect::<Result<Headers, TtfbError>>()?;
+                let status = parsed
+                    .code
+                    .and_then(|code| StatusCode::from_u16(code).ok())
+                    .ok_or_else(|| {
+                        TtfbError::InvalidHttpResponse(
+                            "response does not contain a valid status code".into(),
+                        )
+                    })?;
+                let mut headers = HeaderMap::new();
+                for header in parsed.headers.iter() {
+                    let name = HeaderName::from_bytes(header.name.as_bytes());
+                    let value = HeaderValue::from_bytes(header.value);
+                    let (Ok(name), Ok(value)) = (name, value) else {
+                        return Err(TtfbError::InvalidHttpResponse(
+                            "response contains an invalid header".into(),
+                        ));
+                    };
+                    headers.append(name, value);
+                }
                 return Ok((head_len, status, headers));
             }
             Ok(httparse::Status::Partial) => {
@@ -172,15 +179,15 @@ fn read_head(
 }
 
 /// Returns the body length announced by the Content-Length headers, if any.
-fn content_length(headers: &[(String, String)]) -> Result<Option<usize>, TtfbError> {
-    let values = headers
-        .iter()
-        .filter(|(name, _)| name == CONTENT_LENGTH)
-        .map(|(_, value)| value);
-    let mut parsed = values.map(|value| {
-        value.parse::<usize>().map_err(|_| {
-            TtfbError::InvalidHttpResponse("response has an invalid Content-Length".into())
-        })
+fn content_length(headers: &HeaderMap) -> Result<Option<usize>, TtfbError> {
+    let mut parsed = headers.get_all(CONTENT_LENGTH).iter().map(|value| {
+        value
+            .to_str()
+            .ok()
+            .and_then(|value| value.trim().parse::<usize>().ok())
+            .ok_or_else(|| {
+                TtfbError::InvalidHttpResponse("response has an invalid Content-Length".into())
+            })
     });
     let Some(first) = parsed.next().transpose()? else {
         return Ok(None);
