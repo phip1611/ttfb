@@ -23,7 +23,7 @@
 #![deny(rustdoc::all)]
 
 pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
-pub use outcome::{DurationPair, TtfbOutcome};
+pub use outcome::{DurationPair, HttpProtocol, TtfbOutcome};
 
 use target::Target;
 

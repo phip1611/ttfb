@@ -2,8 +2,26 @@
 
 //! Module for [`TtfbOutcome`].
 
+use std::fmt::{self, Display, Formatter};
 use std::net::IpAddr;
 use std::time::Duration;
+
+/// The HTTP protocol used for the measurement.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum HttpProtocol {
+    /// HTTP/1.1.
+    Http11,
+}
+
+impl Display for HttpProtocol {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Self::Http11 => "HTTP/1.1",
+        };
+        f.write_str(name)
+    }
+}
 
 /// Bundles the duration of a measurement step with the total duration since
 /// the beginning of the overall measurement.
@@ -58,6 +76,8 @@ pub struct TtfbOutcome {
     http_ttfb_duration_rel: Duration,
     /// The relative duration from the first response byte until the complete response.
     http_content_download_duration_rel: Duration,
+    /// The protocol used for the request.
+    protocol: HttpProtocol,
 }
 
 impl TtfbOutcome {
@@ -72,6 +92,7 @@ impl TtfbOutcome {
         http_get_send_duration_rel: Duration,
         http_ttfb_duration_rel: Duration,
         http_content_download_duration_rel: Duration,
+        protocol: HttpProtocol,
     ) -> Self {
         Self {
             user_input,
@@ -83,6 +104,7 @@ impl TtfbOutcome {
             http_get_send_duration_rel,
             http_ttfb_duration_rel,
             http_content_download_duration_rel,
+            protocol,
         }
     }
 
@@ -148,11 +170,17 @@ impl TtfbOutcome {
         let abs_dur_so_far = self.ttfb_duration().total();
         DurationPair::new(self.http_content_download_duration_rel, abs_dur_so_far)
     }
+
+    /// Returns the HTTP protocol used for the request.
+    #[must_use]
+    pub const fn protocol(&self) -> HttpProtocol {
+        self.protocol
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::outcome::TtfbOutcome;
+    use crate::outcome::{HttpProtocol, TtfbOutcome};
     use std::net::{IpAddr, Ipv4Addr};
     use std::time::Duration;
 
@@ -168,6 +196,7 @@ mod tests {
             Duration::from_millis(4),
             Duration::from_millis(5),
             Duration::from_millis(6),
+            HttpProtocol::Http11,
         );
         assert_eq!(
             outcome.dns_lookup_duration().unwrap().total().as_millis(),

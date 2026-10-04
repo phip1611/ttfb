@@ -17,6 +17,8 @@ only change something for the binary.
   certificates together. Previously, the bundled ones were only used if the
   system's could not be loaded.
 - HTTPS works with IPv6 addresses, such as `https://[2606:4700:4700::1111]`.
+- Added `TtfbOutcome::protocol()`, which reports the HTTP protocol used as
+  `HttpProtocol`.
 
 ## ttfb binary
 
