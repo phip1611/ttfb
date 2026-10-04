@@ -210,6 +210,161 @@ mod tests {
         assert_eq!(outcome.zero_rtt_status(), Some(ZeroRttStatus::Replayed));
         server.join().unwrap();
     }
+
+    /// A local HTTP/2 server with TLS 1.3 early data support.
+    #[cfg(feature = "http2")]
+    mod h2_server {
+        use super::*;
+        use bytes::Bytes;
+        use std::pin::Pin;
+        use std::task::{Context, Poll};
+        use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+
+        struct ServerEarlyDataIo {
+            early_data: std::io::Cursor<Vec<u8>>,
+            tls: tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
+        }
+
+        impl AsyncRead for ServerEarlyDataIo {
+            fn poll_read(
+                mut self: Pin<&mut Self>,
+                context: &mut Context<'_>,
+                buffer: &mut ReadBuf<'_>,
+            ) -> Poll<std::io::Result<()>> {
+                let position = self.early_data.position() as usize;
+                if position < self.early_data.get_ref().len() {
+                    let remaining = &self.early_data.get_ref()[position..];
+                    let count = remaining.len().min(buffer.remaining());
+                    buffer.put_slice(&remaining[..count]);
+                    self.early_data.set_position((position + count) as u64);
+                    Poll::Ready(Ok(()))
+                } else {
+                    Pin::new(&mut self.tls).poll_read(context, buffer)
+                }
+            }
+        }
+
+        impl AsyncWrite for ServerEarlyDataIo {
+            fn poll_write(
+                mut self: Pin<&mut Self>,
+                context: &mut Context<'_>,
+                buffer: &[u8],
+            ) -> Poll<std::io::Result<usize>> {
+                Pin::new(&mut self.tls).poll_write(context, buffer)
+            }
+
+            fn poll_flush(
+                mut self: Pin<&mut Self>,
+                context: &mut Context<'_>,
+            ) -> Poll<std::io::Result<()>> {
+                Pin::new(&mut self.tls).poll_flush(context)
+            }
+
+            fn poll_shutdown(
+                mut self: Pin<&mut Self>,
+                context: &mut Context<'_>,
+            ) -> Poll<std::io::Result<()>> {
+                Pin::new(&mut self.tls).poll_shutdown(context)
+            }
+        }
+
+        pub fn serve_http2(requests: usize, reject_second: bool) -> (u16, thread::JoinHandle<()>) {
+            let certificate = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+            let certificate_der = certificate.cert.der().clone();
+            let key = PrivatePkcs8KeyDer::from(certificate.key_pair.serialize_der());
+            let mut config = ServerConfig::builder_with_provider(Arc::new(
+                rustls::crypto::ring::default_provider(),
+            ))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(vec![certificate_der], key.into())
+            .unwrap();
+            config.alpn_protocols = vec![b"h2".to_vec()];
+            config.max_early_data_size = 64 * 1024;
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            listener.set_nonblocking(true).unwrap();
+            let server = thread::spawn(move || {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_io()
+                    .build()
+                    .unwrap()
+                    .block_on(async move {
+                        let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+                        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
+                        for request_number in 0..requests {
+                            let (socket, _) = listener.accept().await.unwrap();
+                            let mut tls = acceptor
+                                .accept_with(socket, |connection| {
+                                    if reject_second && request_number == 1 {
+                                        connection.reject_early_data();
+                                    }
+                                })
+                                .await
+                                .unwrap();
+                            let mut early_data = Vec::new();
+                            if let Some(mut reader) = tls.get_mut().1.early_data() {
+                                reader.read_to_end(&mut early_data).unwrap();
+                            }
+                            let tls = ServerEarlyDataIo {
+                                early_data: std::io::Cursor::new(early_data),
+                                tls,
+                            };
+                            let mut connection = h2::server::handshake(tls).await.unwrap();
+                            let Some(Ok((_request, mut response))) = connection.accept().await
+                            else {
+                                panic!("expected HTTP/2 request");
+                            };
+                            let reply = http::Response::builder().status(200).body(()).unwrap();
+                            // Exceeds the client's flow-control windows of 6 MiB
+                            // per stream and 15 MiB per connection.
+                            let body = Bytes::from(vec![b'x'; 16 * 1024 * 1024]);
+                            response
+                                .send_response(reply, false)
+                                .unwrap()
+                                .send_data(body, true)
+                                .unwrap();
+                            // Serve until the client closes the connection. Closing it
+                            // earlier with unread client frames would reset it while
+                            // the response is still in transit.
+                            while let Some(Ok(_)) = connection.accept().await {}
+                        }
+                    });
+            });
+            (port, server)
+        }
+
+        #[test]
+        fn http2_zero_rtt_is_accepted_after_warmup() {
+            let (port, server) = serve_http2(2, false);
+            let client = TtfbClient::new(TtfbOptions {
+                protocol: ProtocolSelection::Only(HttpProtocol::Http2),
+                allow_insecure_certificates: true,
+                zero_rtt: true,
+            });
+            let outcome = client
+                .measure(format!("https://localhost:{port}/"))
+                .unwrap();
+            assert_eq!(outcome.zero_rtt_status(), Some(ZeroRttStatus::Accepted));
+            server.join().unwrap();
+        }
+
+        #[test]
+        fn http2_zero_rtt_rejection_replays_request() {
+            let (port, server) = serve_http2(2, true);
+            let client = TtfbClient::new(TtfbOptions {
+                protocol: ProtocolSelection::Only(HttpProtocol::Http2),
+                allow_insecure_certificates: true,
+                zero_rtt: true,
+            });
+            let outcome = client
+                .measure(format!("https://localhost:{port}/"))
+                .unwrap();
+            assert_eq!(outcome.zero_rtt_status(), Some(ZeroRttStatus::Replayed));
+            server.join().unwrap();
+        }
+    }
 }
 
 /// Tests that rely on an external network connection.
