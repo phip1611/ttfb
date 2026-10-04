@@ -1,11 +1,30 @@
 // SPDX-License-Identifier: MIT
 
-//! Library + CLI-Tool to measure the TTFB (time to first byte) of HTTP(S) requests.
-//! Additionally, this crate measures the times of DNS lookup, TCP connect, and
-//! TLS handshake. This crate supports HTTP/1.1 and, with the `http2` and
-//! `http3` features, HTTP/2 and HTTP/3. It can cope with TLS 1.2 and 1.3.
+//! Library to measure the TTFB (time to first byte) of HTTP(S) requests.
 //!
-//! See [`TtfbClient`], which is the entry point of the public interface.
+//! Besides the TTFB, each measurement reports how long every step of the
+//! request took: the DNS lookup, the TCP connect and TLS handshake (or the
+//! QUIC handshake with HTTP/3), sending the request, and downloading the
+//! content.
+//!
+//! HTTP/1.1 is always available. HTTP/2 and HTTP/3 come with the `http2` and
+//! `http3` features, which are enabled by default. Unless told otherwise, the
+//! client picks the best protocol the server supports. TLS 1.2 and 1.3 are
+//! supported.
+//!
+//! See [`TtfbClient`], which is the entry point of the public interface:
+//!
+//! ```no_run
+//! use ttfb::{HttpProtocol, ProtocolSelection, TtfbClient, TtfbOptions};
+//!
+//! let client = TtfbClient::new(TtfbOptions {
+//!     protocol: ProtocolSelection::Only(HttpProtocol::Http2),
+//!     ..TtfbOptions::default()
+//! });
+//! let outcome = client.measure("https://example.com")?;
+//! println!("{}: {:?}", outcome.protocol(), outcome.ttfb_duration().total());
+//! # Ok::<(), ttfb::TtfbError>(())
+//! ```
 //!
 //! ## Cross Platform
 //! CLI + lib work on Linux, MacOS, and Windows.
