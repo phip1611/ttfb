@@ -33,7 +33,16 @@ pub fn build_request(url: &Url) -> String {
 /// Reads one complete HTTP/1.1 response after its first byte has already arrived.
 pub fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<(), TtfbError> {
     let mut response = vec![first_byte];
-    let status = read_head(tcp, &mut response)?;
+    let status = loop {
+        let (head_len, status) = read_head(tcp, &mut response)?;
+        // Skip interim responses. 101 Switching Protocols is a final response.
+        if (100..200).contains(&status) && status != 101 {
+            // The buffer may already hold (parts of) the next response.
+            response.drain(..head_len);
+        } else {
+            break status;
+        }
+    };
 
     // Responses with these status codes never have a body.
     if (100..200).contains(&status) || status == 204 || status == 304 {
@@ -51,16 +60,19 @@ pub fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<(),
 }
 
 /// Reads until `response` holds a complete response head and parses its status code.
-fn read_head(tcp: &mut dyn IoReadAndWrite, response: &mut Vec<u8>) -> Result<u16, TtfbError> {
+fn read_head(
+    tcp: &mut dyn IoReadAndWrite,
+    response: &mut Vec<u8>,
+) -> Result<(usize, u16), TtfbError> {
     loop {
         let mut headers = [httparse::EMPTY_HEADER; 64];
         let mut parsed = httparse::Response::new(&mut headers);
         match parsed.parse(response) {
-            Ok(httparse::Status::Complete(_)) => {
+            Ok(httparse::Status::Complete(head_len)) => {
                 let status = parsed.code.ok_or_else(|| {
                     TtfbError::InvalidHttpResponse("response does not contain a status code".into())
                 })?;
-                return Ok(status);
+                return Ok((head_len, status));
             }
             Ok(httparse::Status::Partial) => {
                 if response.len() >= MAX_HEAD_SIZE {
@@ -113,6 +125,16 @@ mod tests {
     #[test]
     fn reads_response_without_body() {
         assert_eq!(parse_response(b"HTTP/1.1 204 No Content\r\n\r\n"), Ok(()));
+    }
+
+    #[test]
+    fn skips_interim_response() {
+        assert_eq!(
+            parse_response(
+                b"HTTP/1.1 103 Early Hints\r\nLink: </style.css>\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
+            ),
+            Ok(())
+        );
     }
 
     #[test]
