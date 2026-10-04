@@ -59,13 +59,34 @@ struct TtfbArgs {
     /// Similar to `-k` of `curl`.
     #[arg(short = 'k', long = "insecure")]
     allow_insecure_certificates: bool,
+    /// Require HTTP/1.1.
+    #[arg(long = "http1.1", conflicts_with_all = ["http2", "http3", "auto_protocol"])]
+    http11: bool,
+    /// Require HTTP/2.
+    #[arg(long, conflicts_with_all = ["http11", "http3", "auto_protocol"])]
+    http2: bool,
+    /// Require HTTP/3.
+    #[arg(long, conflicts_with_all = ["http11", "http2", "auto_protocol"])]
+    http3: bool,
+    /// Automatically choose the best supported HTTP protocol.
+    #[arg(long, conflicts_with_all = ["http11", "http2", "http3"])]
+    auto_protocol: bool,
 }
 
 /// Small CLI binary wrapper around the [`ttfb`] lib.
 fn main() {
     let input: TtfbArgs = TtfbArgs::parse();
+    let protocol = if input.http11 {
+        ProtocolSelection::Only(HttpProtocol::Http11)
+    } else if input.http2 {
+        ProtocolSelection::Only(HttpProtocol::Http2)
+    } else if input.http3 {
+        ProtocolSelection::Only(HttpProtocol::Http3)
+    } else {
+        ProtocolSelection::Auto
+    };
     let client = TtfbClient::new(TtfbOptions {
-        protocol: ProtocolSelection::Only(HttpProtocol::Http11),
+        protocol,
         allow_insecure_certificates: input.allow_insecure_certificates,
     });
     let res = client.measure(input.host);

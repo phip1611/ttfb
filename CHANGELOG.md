@@ -43,9 +43,22 @@ only change something for the binary.
 
 ## ttfb binary
 
+- **BREAKING** The protocol is now chosen automatically by default: HTTP/3,
+  then HTTP/2, then HTTP/1.1. Use `--http1.1` for the previous behavior.
+  For HTTPS servers without HTTP/3, the HTTP/3 attempt usually waits for its
+  timeout of 1 s, which prolongs the run but not the measured timings.
+- Added `--http1.1`, `--http2`, `--http3`, and `--auto-protocol` to select
+  the HTTP protocol.
 - The output shows the HTTP protocol and the download of the response.
 - The output shows the QUIC handshake of HTTP/3 measurements instead of the
   TCP connect and the TLS handshake.
+- The release binary grows with the HTTP/2 and HTTP/3 support. On Linux,
+  built with Rust 1.99 (sizes when stripped in parentheses):
+  - v1.15.0: 3.2 MiB (2.5 MiB)
+  - without `http2` and `http3`: 3.2 MiB (2.5 MiB)
+  - with `http2`: 3.5 MiB (2.8 MiB)
+  - with `http3`: 4.0 MiB (3.2 MiB)
+  - with `http2` and `http3`, the default: 4.3 MiB (3.4 MiB)
 
 # v1.15.0 (2025-04-02)
 
