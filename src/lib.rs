@@ -39,6 +39,7 @@ use std::time::{Duration, Instant};
 use url::Url;
 
 mod error;
+mod http11;
 mod outcome;
 
 const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -94,7 +95,8 @@ pub fn ttfb(
     // implementation will either send plain text or encrypt it for TLS.
     let (mut tcp, tls_handshake_duration) =
         tls_handshake_if_necessary(tcp, &url, allow_insecure_certificates)?;
-    let (http_get_send_duration, http_ttfb_duration) = execute_http_get(&mut tcp, &url)?;
+    let (http_get_send_duration, http_ttfb_duration, http_content_download_duration) =
+        execute_http_get(&mut tcp, &url)?;
 
     Ok(TtfbOutcome::new(
         input,
@@ -105,7 +107,7 @@ pub fn ttfb(
         tls_handshake_duration,
         http_get_send_duration,
         http_ttfb_duration,
-        // http_content_download_duration,
+        http_content_download_duration,
     ))
 }
 
@@ -215,8 +217,8 @@ impl ServerCertVerifier for AllowInvalidCertsVerifier {
 fn execute_http_get(
     tcp: &mut Box<dyn IoReadAndWrite>,
     url: &Url,
-) -> Result<(Duration, Duration), TtfbError> {
-    let header = build_http11_header(url);
+) -> Result<(Duration, Duration, Duration), TtfbError> {
+    let header = http11::build_request(url);
     let now = Instant::now();
     tcp.write_all(header.as_bytes())
         .map_err(TtfbError::CantConnectHttp)?;
@@ -227,39 +229,14 @@ fn execute_http_get(
     tcp.read_exact(&mut one_byte_buf)
         .map_err(|_e| TtfbError::NoHttpResponse)?;
     let http_ttfb_duration = now.elapsed();
-
-    // todo can lead to error, not every server responds with EOF
-    // need to parse the request header and get the length from that
-    /*tcp.read_to_end(&mut content)
-        .map_err(|_| TtfbError::CantConnectHttp)?;
+    let now = Instant::now();
+    http11::read_response(tcp.as_mut(), one_byte_buf[0])?;
     let http_content_download_duration = now.elapsed();
-    println!("http content:\n{}", unsafe {
-        String::from_utf8_unchecked(content)
-    });*/
     Ok((
         get_request_send_duration,
         http_ttfb_duration,
-        // http_content_download_duration,
+        http_content_download_duration,
     ))
-}
-
-/// Constructs the header for a HTTP/1.1 GET-Request.
-///
-/// Sets the following default headers:
-/// - `Accept-Encoding: gzip, deflate, br, zstd` (default of Chrome v123)
-/// - `User-Agent: ttfb/<version>`
-fn build_http11_header(url: &Url) -> String {
-    format!(
-        "GET {path} HTTP/1.1\r\n\
-        Host: {host}\r\n\
-        User-Agent: ttfb/{version}\r\n\
-        Accept: */*\r\n\
-        Accept-Encoding: gzip, deflate, br, zstd\r\n\
-        \r\n",
-        path = url.path(),
-        host = url.host_str().unwrap(),
-        version = CRATE_VERSION
-    )
 }
 
 /// Parses the string input into an [`Url`] object.

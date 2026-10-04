@@ -37,6 +37,9 @@ bin = ["dep:clap", "dep:crossterm"]
 [dependencies]
 # +++ LIBRARY +++
 
+# HTTP/1.1 response framing
+httparse = "1.10.1"
+
 thiserror = "2.0.12"
 # DNS over systems default DNS resolver
 hickory-resolver = { version = "=0.25.2", default-features = false, features = ["system-config", "tokio"] }
