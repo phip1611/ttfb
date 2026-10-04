@@ -2,8 +2,14 @@
 
 //! HTTP/1.1 request construction and response framing.
 
-use crate::CRATE_VERSION;
+use crate::{CRATE_VERSION, IoReadAndWrite, TtfbError};
 use url::Url;
+
+/// Size of a single socket read. Arbitrarily chosen.
+const READ_BUFFER_SIZE: usize = 8 * 1024;
+/// Upper bound for the response head. RFC 9112 sets no limit; this is an
+/// arbitrary guard against unbounded buffering.
+const MAX_HEAD_SIZE: usize = 64 * 1024;
 
 /// Constructs the header for a HTTP/1.1 GET-Request.
 ///
@@ -24,9 +30,90 @@ pub fn build_request(url: &Url) -> String {
     )
 }
 
+/// Reads one complete HTTP/1.1 response after its first byte has already arrived.
+pub fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<(), TtfbError> {
+    let mut response = vec![first_byte];
+    let status = read_head(tcp, &mut response)?;
+
+    // Responses with these status codes never have a body.
+    if (100..200).contains(&status) || status == 204 || status == 304 {
+        return Ok(());
+    }
+
+    // Without explicit framing, the body ends when the server closes the connection.
+    let mut buffer = [0_u8; READ_BUFFER_SIZE];
+    loop {
+        let read = tcp.read(&mut buffer).map_err(TtfbError::CantConnectHttp)?;
+        if read == /* EOF */ 0 {
+            return Ok(());
+        }
+    }
+}
+
+/// Reads until `response` holds a complete response head and parses its status code.
+fn read_head(tcp: &mut dyn IoReadAndWrite, response: &mut Vec<u8>) -> Result<u16, TtfbError> {
+    loop {
+        let mut headers = [httparse::EMPTY_HEADER; 64];
+        let mut parsed = httparse::Response::new(&mut headers);
+        match parsed.parse(response) {
+            Ok(httparse::Status::Complete(_)) => {
+                let status = parsed.code.ok_or_else(|| {
+                    TtfbError::InvalidHttpResponse("response does not contain a status code".into())
+                })?;
+                return Ok(status);
+            }
+            Ok(httparse::Status::Partial) => {
+                if response.len() >= MAX_HEAD_SIZE {
+                    return Err(TtfbError::InvalidHttpResponse(
+                        "response headers exceed 64 KiB".into(),
+                    ));
+                }
+                read_more(tcp, response)?;
+            }
+            Err(error) => {
+                return Err(TtfbError::InvalidHttpResponse(format!(
+                    "could not parse response headers: {error}"
+                )));
+            }
+        }
+    }
+}
+
+/// Appends the next data from `tcp` to `buffer`.
+///
+/// Fails if the connection was closed, as the caller still expects more data
+/// for a complete response.
+fn read_more(tcp: &mut dyn IoReadAndWrite, buffer: &mut Vec<u8>) -> Result<(), TtfbError> {
+    let mut chunk = [0_u8; READ_BUFFER_SIZE];
+    let read = tcp.read(&mut chunk).map_err(TtfbError::CantConnectHttp)?;
+    if read == /* EOF */ 0 {
+        return Err(TtfbError::InvalidHttpResponse(
+            "connection closed before the response was complete".into(),
+        ));
+    }
+    buffer.extend_from_slice(&chunk[..read]);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
+
+    fn parse_response(response: &[u8]) -> Result<(), TtfbError> {
+        let mut stream = Cursor::new(response[1..].to_vec());
+        read_response(&mut stream, response[0])
+    }
+
+    #[test]
+    fn reads_close_delimited_response() {
+        assert_eq!(parse_response(b"HTTP/1.1 200 OK\r\n\r\nhello"), Ok(()));
+    }
+
+    #[test]
+    fn reads_response_without_body() {
+        assert_eq!(parse_response(b"HTTP/1.1 204 No Content\r\n\r\n"), Ok(()));
+    }
 
     #[test]
     fn request_includes_query_and_non_default_port() {

@@ -81,6 +81,9 @@ pub enum TtfbError {
     /// Didn't receive any data after sending the HTTP GET request.
     #[error("Didn't receive any data. Is the host running a HTTP server?")]
     NoHttpResponse,
+    /// The server returned an invalid or unsupported HTTP response.
+    #[error("The HTTP response was invalid or unsupported: {0}")]
+    InvalidHttpResponse(String),
     /// There was a problem with the TCP stream.
     #[error("There was a problem with the TCP stream because: {0}")]
     OtherStreamError(#[source] io::Error),
@@ -112,6 +115,7 @@ impl PartialEq for TtfbError {
                 true
             }
             (Self::NoHttpResponse, Self::NoHttpResponse) => true,
+            (Self::InvalidHttpResponse(e1), Self::InvalidHttpResponse(e2)) => e1.eq(e2),
             _ => false,
         }
     }
