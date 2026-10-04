@@ -229,20 +229,19 @@ fn execute_http_get(
         .map_err(|_e| TtfbError::NoHttpResponse)?;
     let http_ttfb_duration = now.elapsed();
 
-    // todo can lead to error, not every server responds with EOF
-    // need to parse the request header and get the length from that
-    /*tcp.read_to_end(&mut content)
-        .map_err(|_| TtfbError::CantConnectHttp)?;
-    let http_content_download_duration = now.elapsed();
-    println!("http content:\n{}", unsafe {
-        String::from_utf8_unchecked(content)
-    });*/
+    // Read the rest of the response until the server closes the connection.
+    let mut buffer = [0_u8; HTTP11_READ_BUFFER_SIZE];
+    while tcp.read(&mut buffer).map_err(TtfbError::CantConnectHttp)? != /* EOF */ 0 {}
+
     Ok((
         get_request_send_duration,
         http_ttfb_duration,
         // http_content_download_duration,
     ))
 }
+
+/// Size of a single socket read. Arbitrarily chosen.
+const HTTP11_READ_BUFFER_SIZE: usize = 8 * 1024;
 
 /// Parses the string input into an [`Url`] object.
 fn parse_input_as_url(input: &str) -> Result<Url, TtfbError> {

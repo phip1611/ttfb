@@ -19,6 +19,7 @@ pub fn build_request(url: &Url) -> String {
         User-Agent: ttfb/{CRATE_VERSION}\r\n\
         Accept: */*\r\n\
         Accept-Encoding: gzip, deflate, br, zstd\r\n\
+        Connection: close\r\n\
         \r\n"
     )
 }
