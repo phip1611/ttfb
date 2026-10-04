@@ -13,6 +13,7 @@ const MAX_HEAD_SIZE: usize = 64 * 1024;
 
 // Header names in lowercase, as normalized by `read_head`.
 const CONTENT_LENGTH: &str = "content-length";
+const TRANSFER_ENCODING: &str = "transfer-encoding";
 
 type Headers = Vec<(String, String)>;
 
@@ -53,6 +54,18 @@ pub fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<(),
     // Responses with these status codes never have a body.
     if (100..200).contains(&status) || status == 204 || status == 304 {
         return Ok(());
+    }
+
+    // The last transfer coding decides whether the body is chunked.
+    let transfer_is_chunked = headers
+        .iter()
+        .filter(|(name, _)| name == TRANSFER_ENCODING)
+        .flat_map(|(_, value)| value.split(','))
+        .map(str::trim)
+        .next_back()
+        .is_some_and(|coding| coding.eq_ignore_ascii_case("chunked"));
+    if transfer_is_chunked {
+        return read_chunked_body(tcp, body);
     }
 
     // A fixed-length body ends after Content-Length bytes.
@@ -151,6 +164,53 @@ fn content_length(headers: &[(String, String)]) -> Result<Option<usize>, TtfbErr
     Ok(Some(first))
 }
 
+/// Reads and discards a body with chunked transfer coding.
+///
+/// `body` holds the body bytes that already arrived together with the response
+/// head. Every chunk starts with a line containing its size in hex (optionally
+/// followed by extensions) and its data is followed by CRLF. A chunk of size
+/// zero ends the body. It is followed by optional trailer fields and an empty
+/// line.
+fn read_chunked_body(tcp: &mut dyn IoReadAndWrite, mut body: Vec<u8>) -> Result<(), TtfbError> {
+    loop {
+        // Wait for the complete chunk-size line.
+        let line_end = loop {
+            if let Some(index) = find_bytes(&body, b"\r\n") {
+                break index;
+            }
+            read_more(tcp, &mut body)?;
+        };
+        // Parse the hex size and ignore chunk extensions after ';'.
+        let chunk_size = std::str::from_utf8(&body[..line_end])
+            .ok()
+            .and_then(|line| line.split(';').next())
+            .and_then(|size| usize::from_str_radix(size.trim(), 16).ok())
+            .ok_or_else(|| TtfbError::InvalidHttpResponse("invalid chunk size".into()))?;
+        if chunk_size == 0 {
+            // Last chunk: wait for the end of the (possibly empty) trailer section.
+            let trailers_start = line_end + 2 /* CRLF */;
+            loop {
+                let trailers = &body[trailers_start..];
+                if trailers.starts_with(b"\r\n") || find_bytes(trailers, b"\r\n\r\n").is_some() {
+                    return Ok(());
+                }
+                read_more(tcp, &mut body)?;
+            }
+        }
+        // Wait for the chunk data and its CRLF, then drop the whole chunk.
+        let chunk_end = line_end + 2 /* CRLF */ + chunk_size + 2 /* CRLF */;
+        while body.len() < chunk_end {
+            read_more(tcp, &mut body)?;
+        }
+        if &body[chunk_end - 2 /* CRLF */..chunk_end] != b"\r\n" {
+            return Err(TtfbError::InvalidHttpResponse(
+                "chunk data is not followed by CRLF".into(),
+            ));
+        }
+        body.drain(..chunk_end);
+    }
+}
+
 /// Appends the next data from `tcp` to `buffer`.
 ///
 /// Fails if the connection was closed, as the caller still expects more data
@@ -167,6 +227,12 @@ fn read_more(tcp: &mut dyn IoReadAndWrite, buffer: &mut Vec<u8>) -> Result<(), T
     Ok(())
 }
 
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,6 +247,19 @@ mod tests {
     fn reads_fixed_length_response() {
         assert_eq!(
             parse_response(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello"),
+            Ok(())
+        );
+    }
+
+    /// Chunked transfer coding is common for dynamically generated responses
+    /// whose length is not known upfront. Trailer fields after the last chunk
+    /// are rare (e.g., checksums or gRPC status) but valid and must be read.
+    #[test]
+    fn reads_chunked_response_with_trailer() {
+        assert_eq!(
+            parse_response(
+                b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\nChecksum: valid\r\n\r\n",
+            ),
             Ok(())
         );
     }
