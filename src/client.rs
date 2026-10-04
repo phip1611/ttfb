@@ -175,4 +175,22 @@ mod network_tests {
             "must execute TLS handshake"
         );
     }
+
+    #[cfg(feature = "http2")]
+    #[test]
+    fn measures_well_known_http2_websites() {
+        let client = TtfbClient::new(TtfbOptions {
+            protocol: ProtocolSelection::Only(HttpProtocol::Http2),
+            ..TtfbOptions::default()
+        });
+        for url in [
+            "https://www.google.com",
+            "https://github.com",
+            "https://www.cloudflare.com",
+        ] {
+            let outcome = client.measure(url).unwrap();
+            assert_eq!(outcome.protocol(), HttpProtocol::Http2, "{url}");
+            assert!(outcome.tls_handshake_duration().is_some(), "{url}");
+        }
+    }
 }
