@@ -327,3 +327,55 @@ mod tests {
         assert!(!request.contains("fragment"));
     }
 }
+
+/// Checks the response framing of well-known websites. Sites may change how
+/// they frame responses, so a failure can also mean that this list needs an
+/// update.
+#[cfg(all(test, network_tests))]
+mod network_tests {
+    use super::*;
+    use crate::{resolve_dns_if_necessary, tcp_connect, tls_handshake_if_necessary};
+
+    /// Requests `url` and returns how the response body was framed.
+    fn framing_of(url: &str) -> Result<Framing, TtfbError> {
+        let url = Url::parse(url).unwrap();
+        let (address, _) = resolve_dns_if_necessary(&url)?;
+        let (tcp, _) = tcp_connect(address, url.port_or_known_default().unwrap())?;
+        let (mut stream, _) = tls_handshake_if_necessary(tcp, &url, false)?;
+        stream
+            .write_all(build_request(&url).as_bytes())
+            .map_err(TtfbError::CantConnectHttp)?;
+        let mut first_byte = [0];
+        stream
+            .read_exact(&mut first_byte)
+            .map_err(|_| TtfbError::NoHttpResponse)?;
+        read_response(stream.as_mut(), first_byte[0])
+    }
+
+    #[test]
+    fn well_known_websites_cover_all_framings() {
+        let cases = [
+            ("https://example.com", Framing::Chunked),
+            ("https://github.com", Framing::Chunked),
+            // Bodies that need further reads after the response head.
+            ("https://rust-lang.org", Framing::ContentLength),
+            ("https://duckduckgo.com", Framing::ContentLength),
+            ("https://fedoraproject.org", Framing::ContentLength),
+            // Redirects with `Content-Length: 0`.
+            ("http://github.com", Framing::ContentLength),
+            ("http://crates.io", Framing::ContentLength),
+            ("https://un.org", Framing::CloseDelimited),
+            ("http://vercel.com", Framing::CloseDelimited),
+            ("https://httpbin.org/status/204", Framing::NoBody),
+        ];
+        let failures = cases
+            .iter()
+            .filter_map(|(url, expected)| {
+                let actual = framing_of(url);
+                (actual.as_ref() != Ok(expected))
+                    .then(|| format!("{url}: expected {expected:?}, got {actual:?}"))
+            })
+            .collect::<Vec<_>>();
+        assert!(failures.is_empty(), "{failures:#?}");
+    }
+}
