@@ -11,13 +11,13 @@ use std::time::{Duration, Instant};
 use url::Url;
 
 /// Parses the string input into an [`Url`] object.
-pub fn parse_input_as_url(input: &str) -> Result<Url, TtfbError> {
+fn parse_input_as_url(input: &str) -> Result<Url, TtfbError> {
     Url::parse(input)
         .map_err(|e| TtfbError::InvalidUrl(InvalidUrlError::WrongFormat(e.to_string())))
 }
 
 /// Prepends the default scheme `http://` is necessary to the user input.
-pub fn prepend_default_scheme_if_necessary(url: String) -> String {
+fn prepend_default_scheme_if_necessary(url: String) -> String {
     const SCHEME_SEPARATOR: &str = "://";
     const DEFAULT_SCHEME: &str = "http";
 
@@ -30,7 +30,7 @@ pub fn prepend_default_scheme_if_necessary(url: String) -> String {
 
 /// Checks the scheme is on the allow list. Currently, we only allow "http"
 /// and "https".
-pub fn check_scheme_is_allowed(url: &Url) -> Result<(), TtfbError> {
+fn check_scheme_is_allowed(url: &Url) -> Result<(), TtfbError> {
     let actual_scheme = url.scheme();
     let allowed_scheme = actual_scheme == "http" || actual_scheme == "https";
     if allowed_scheme {
@@ -45,7 +45,7 @@ pub fn check_scheme_is_allowed(url: &Url) -> Result<(), TtfbError> {
 /// Checks from the URL if we already have an IP address or not.
 /// If the user gave us a domain name, we resolve it using the
 /// [`hickory_resolver`] crate and measure the time for it.
-pub fn resolve_dns_if_necessary(url: &Url) -> Result<(IpAddr, Option<Duration>), TtfbError> {
+fn resolve_dns_if_necessary(url: &Url) -> Result<(IpAddr, Option<Duration>), TtfbError> {
     match url.domain() {
         Some(domain) => {
             // shortcut
@@ -140,6 +140,46 @@ fn resolve_dns(url: &Url) -> Result<(IpAddr, Duration), TtfbError> {
     }
 }
 
+/// The resolved destination of a measurement.
+#[derive(Clone, Debug)]
+pub struct Target {
+    /// The user input, including the default scheme if it was missing.
+    pub input: String,
+    /// The parsed URL.
+    pub url: Url,
+    /// The resolved IP address.
+    pub address: IpAddr,
+    /// The port, explicit or the scheme's default.
+    pub port: u16,
+    /// The duration of the DNS lookup, if one was necessary.
+    pub dns_duration: Option<Duration>,
+}
+
+impl Target {
+    /// Parses `input` as an HTTP(S) URL and resolves its host.
+    ///
+    /// `input` without a scheme defaults to `http://`.
+    pub fn resolve(input: &str) -> Result<Self, TtfbError> {
+        if input.is_empty() {
+            return Err(TtfbError::InvalidUrl(InvalidUrlError::MissingInput));
+        }
+        let input = prepend_default_scheme_if_necessary(input.to_owned());
+        let url = parse_input_as_url(&input)?;
+        check_scheme_is_allowed(&url)?;
+        let (address, dns_duration) = resolve_dns_if_necessary(&url)?;
+        let port = url
+            .port_or_known_default()
+            .expect("http and https URLs should have a known default port");
+        Ok(Self {
+            input,
+            url,
+            address,
+            port,
+            dns_duration,
+        })
+    }
+}
+
 #[cfg(all(test, not(network_tests)))]
 mod tests {
     use super::*;
@@ -221,6 +261,21 @@ mod tests {
             .unwrap(),
         )
         .expect_err("must not accept ftp");
+    }
+
+    #[test]
+    fn resolve_defaults_to_http() {
+        let target = Target::resolve("localhost").unwrap();
+        assert_eq!(target.input, "http://localhost");
+        assert_eq!(target.port, 80);
+    }
+
+    #[test]
+    fn resolve_rejects_empty_input() {
+        assert_eq!(
+            Target::resolve("").unwrap_err(),
+            TtfbError::InvalidUrl(InvalidUrlError::MissingInput)
+        );
     }
 }
 

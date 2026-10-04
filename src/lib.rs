@@ -33,10 +33,7 @@ use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{IpAddr, TcpStream};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use target::{
-    check_scheme_is_allowed, parse_input_as_url, prepend_default_scheme_if_necessary,
-    resolve_dns_if_necessary,
-};
+use target::Target;
 use url::Url;
 
 mod error;
@@ -79,32 +76,21 @@ pub fn ttfb(
     input: impl AsRef<str>,
     allow_insecure_certificates: bool,
 ) -> Result<TtfbOutcome, TtfbError> {
-    let input = input.as_ref();
-    if input.is_empty() {
-        return Err(TtfbError::InvalidUrl(InvalidUrlError::MissingInput));
-    }
-    let input = input.to_string();
-    let input = prepend_default_scheme_if_necessary(input);
-    let url = parse_input_as_url(&input)?;
-    // println!("final url: {}", url);
-    check_scheme_is_allowed(&url)?;
-
-    let (addr, dns_duration) = resolve_dns_if_necessary(&url)?;
-    let port = url.port_or_known_default().unwrap();
-    let (tcp, tcp_connect_duration) = tcp_connect(addr, port)?;
+    let target = Target::resolve(input.as_ref())?;
+    let (tcp, tcp_connect_duration) = tcp_connect(target.address, target.port)?;
     // Does TLS handshake if necessary: returns regular TCP stream if regular HTTP is used.
     // We can write to the "tcp" trait object whatever content we want to. The underlying
     // implementation will either send plain text or encrypt it for TLS.
     let (mut tcp, tls_handshake_duration) =
-        tls_handshake_if_necessary(tcp, &url, allow_insecure_certificates)?;
+        tls_handshake_if_necessary(tcp, &target.url, allow_insecure_certificates)?;
     let (http_get_send_duration, http_ttfb_duration, http_content_download_duration) =
-        execute_http_get(&mut tcp, &url)?;
+        execute_http_get(&mut tcp, &target.url)?;
 
     Ok(TtfbOutcome::new(
-        input,
-        addr,
-        port,
-        dns_duration,
+        target.input,
+        target.address,
+        target.port,
+        target.dns_duration,
         tcp_connect_duration,
         tls_handshake_duration,
         http_get_send_duration,

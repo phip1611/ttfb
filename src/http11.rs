@@ -334,16 +334,16 @@ mod tests {
 #[cfg(all(test, network_tests))]
 mod network_tests {
     use super::*;
-    use crate::{resolve_dns_if_necessary, tcp_connect, tls_handshake_if_necessary};
+    use crate::target::Target;
+    use crate::{tcp_connect, tls_handshake_if_necessary};
 
     /// Requests `url` and returns how the response body was framed.
     fn framing_of(url: &str) -> Result<Framing, TtfbError> {
-        let url = Url::parse(url).unwrap();
-        let (address, _) = resolve_dns_if_necessary(&url)?;
-        let (tcp, _) = tcp_connect(address, url.port_or_known_default().unwrap())?;
-        let (mut stream, _) = tls_handshake_if_necessary(tcp, &url, false)?;
+        let target = Target::resolve(url)?;
+        let (tcp, _) = tcp_connect(target.address, target.port)?;
+        let (mut stream, _) = tls_handshake_if_necessary(tcp, &target.url, false)?;
         stream
-            .write_all(build_request(&url).as_bytes())
+            .write_all(build_request(&target.url).as_bytes())
             .map_err(TtfbError::CantConnectHttp)?;
         let mut first_byte = [0];
         stream
