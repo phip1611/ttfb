@@ -343,6 +343,8 @@ pub fn measure(target: &Target, tls_config: Arc<ClientConfig>) -> Result<TtfbOut
         http_ttfb_duration,
         http_content_download_duration,
         HttpProtocol::Http11,
+        None,
+        None,
     ))
 }
 

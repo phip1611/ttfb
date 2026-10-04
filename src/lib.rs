@@ -24,7 +24,7 @@
 
 pub use client::{ProtocolSelection, TtfbClient, TtfbOptions};
 pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
-pub use outcome::{DurationPair, HttpProtocol, TtfbOutcome};
+pub use outcome::{DurationPair, HttpProtocol, TtfbOutcome, ZeroRttStatus};
 
 use std::{panic, thread};
 
