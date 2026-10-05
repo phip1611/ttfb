@@ -3,6 +3,7 @@
 //! The TLS configuration shared by all protocols.
 
 use crate::TtfbError;
+use rustls::client::Resumption;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, Error, RootCertStore, SignatureScheme};
@@ -30,7 +31,12 @@ pub fn config(allow_insecure_certificates: bool) -> Arc<ClientConfig> {
         roots.add_parsable_certificates(rustls_native_certs::load_native_certs().certs);
         builder.with_root_certificates(roots)
     };
-    Arc::new(builder.with_no_client_auth())
+    let mut config = builder.with_no_client_auth();
+    // A client reuses the configuration for all its measurements. Without
+    // resumption, each of them performs a full handshake, which keeps
+    // repeated measurements comparable.
+    config.resumption = Resumption::disabled();
+    Arc::new(config)
 }
 
 /// Returns the name to verify the server certificate against.

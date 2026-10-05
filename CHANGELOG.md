@@ -8,6 +8,11 @@ only change something for the binary.
 
 ## ttfb lib
 
+- **BREAKING** The `ttfb()` function is replaced by `TtfbClient`, which is
+  configured with `TtfbOptions`:
+  `TtfbClient::new(TtfbOptions::default()).measure(url)`.
+  `TtfbOptions::protocol` takes a `ProtocolSelection`, and
+  `TtfbOutcome::protocol_selection()` reports it.
 - **BREAKING** `TtfbError::CantConnectTls` and `TtfbError::CantVerifyTls`
   are replaced by `TtfbError::Tls`, which describes the error as a string.
   The lib no longer depends on `rustls-connector`.

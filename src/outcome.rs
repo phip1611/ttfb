@@ -2,6 +2,7 @@
 
 //! Module for [`TtfbOutcome`].
 
+use crate::ProtocolSelection;
 use std::fmt::{self, Display, Formatter};
 use std::net::IpAddr;
 use std::time::Duration;
@@ -78,6 +79,8 @@ pub struct TtfbOutcome {
     http_content_download_duration_rel: Duration,
     /// The protocol used for the request.
     protocol: HttpProtocol,
+    /// How the protocol was selected.
+    protocol_selection: ProtocolSelection,
 }
 
 impl TtfbOutcome {
@@ -105,6 +108,7 @@ impl TtfbOutcome {
             http_ttfb_duration_rel,
             http_content_download_duration_rel,
             protocol,
+            protocol_selection: ProtocolSelection::Only(protocol),
         }
     }
 
@@ -175,6 +179,18 @@ impl TtfbOutcome {
     #[must_use]
     pub const fn protocol(&self) -> HttpProtocol {
         self.protocol
+    }
+
+    /// Returns how the protocol was selected: automatically or explicitly.
+    #[must_use]
+    pub const fn protocol_selection(&self) -> ProtocolSelection {
+        self.protocol_selection
+    }
+
+    /// Records how the protocol was selected, which only the client knows.
+    pub(crate) const fn with_protocol_selection(mut self, selection: ProtocolSelection) -> Self {
+        self.protocol_selection = selection;
+        self
     }
 }
 
