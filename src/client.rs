@@ -4,6 +4,8 @@
 
 use crate::target::Target;
 use crate::{HttpProtocol, TtfbError, TtfbOutcome, http11, tls};
+#[cfg(feature = "http2")]
+use crate::{http2, run_in_tokio};
 use rustls::ClientConfig;
 use std::sync::Arc;
 
@@ -49,6 +51,21 @@ impl TtfbClient {
         }
     }
 
+    /// Measures `target` via HTTP/2. The asynchronous exchange runs on a
+    /// dedicated Tokio runtime.
+    #[cfg(feature = "http2")]
+    fn measure_http2(&self, target: &Target) -> Result<TtfbOutcome, TtfbError> {
+        run_in_tokio(http2::measure(target, Arc::clone(&self.tls_config)))
+    }
+
+    /// Fails, as the crate was built without the `http2` feature.
+    #[cfg(not(feature = "http2"))]
+    fn measure_http2(&self, _target: &Target) -> Result<TtfbOutcome, TtfbError> {
+        Err(TtfbError::UnsupportedHttpProtocol(
+            "ttfb was built without the http2 feature".into(),
+        ))
+    }
+
     /// Measures one GET request to `input`.
     ///
     /// `input` is a URL pointing to an HTTP server, such as:
@@ -67,6 +84,7 @@ impl TtfbClient {
             ProtocolSelection::Auto | ProtocolSelection::Only(HttpProtocol::Http11) => {
                 http11::measure(&target, Arc::clone(&self.tls_config))
             }
+            ProtocolSelection::Only(HttpProtocol::Http2) => self.measure_http2(&target),
         }?;
         Ok(outcome.with_protocol_selection(self.options.protocol))
     }

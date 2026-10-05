@@ -2,8 +2,8 @@
 
 //! Library + CLI-Tool to measure the TTFB (time to first byte) of HTTP(S) requests.
 //! Additionally, this crate measures the times of DNS lookup, TCP connect, and
-//! TLS handshake. This crate currently only supports HTTP/1.1. It can cope with
-//! TLS 1.2 and 1.3.LICENSE.
+//! TLS handshake. This crate supports HTTP/1.1 and, with the `http2` feature,
+//! HTTP/2. It can cope with TLS 1.2 and 1.3.
 //!
 //! See [`TtfbClient`], which is the entry point of the public interface.
 //!
@@ -31,6 +31,8 @@ use std::{panic, thread};
 mod client;
 mod error;
 mod http11;
+#[cfg(feature = "http2")]
+mod http2;
 mod outcome;
 mod target;
 mod tls;

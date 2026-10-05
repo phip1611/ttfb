@@ -13,12 +13,15 @@ use std::time::Duration;
 pub enum HttpProtocol {
     /// HTTP/1.1.
     Http11,
+    /// HTTP/2.
+    Http2,
 }
 
 impl Display for HttpProtocol {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let name = match self {
             Self::Http11 => "HTTP/1.1",
+            Self::Http2 => "HTTP/2",
         };
         f.write_str(name)
     }
