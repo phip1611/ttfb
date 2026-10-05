@@ -13,6 +13,13 @@ use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
 use url::Url;
 
+/// The flow-control windows that Chrome uses for a stream and for the whole
+/// connection. h2's defaults of 65,535 bytes each would limit downloads to
+/// that amount per round trip, which inflates the download duration of
+/// larger bodies.
+const STREAM_WINDOW_SIZE: u32 = 6 * 1024 * 1024;
+const CONNECTION_WINDOW_SIZE: u32 = 15 * 1024 * 1024;
+
 fn http2_error(error: h2::Error) -> TtfbError {
     TtfbError::Http2(error.to_string())
 }
@@ -104,7 +111,13 @@ pub async fn measure(
     let (response, send_duration) = {
         let request = build_request(&target.url)?;
         let begin = Instant::now();
-        let (mut sender, connection) = h2::client::handshake(tls).await.map_err(http2_error)?;
+        let (mut sender, connection) = h2::client::Builder::new()
+            .initial_window_size(STREAM_WINDOW_SIZE)
+            .initial_connection_window_size(CONNECTION_WINDOW_SIZE)
+            // The request has no body, so any body buffer type works.
+            .handshake::<_, &[u8]>(tls)
+            .await
+            .map_err(http2_error)?;
         // The connection future drives the HTTP/2 protocol in the background.
         tokio::spawn(async move {
             let _ = connection.await;
