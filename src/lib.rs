@@ -18,6 +18,8 @@
 )]
 // I can't do anything about this; fault of the dependencies
 #![allow(clippy::multiple_crate_versions)]
+// Crate-internal items are marked as such, also in private modules.
+#![allow(clippy::redundant_pub_crate)]
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
 #![deny(rustdoc::all)]
