@@ -9,7 +9,11 @@ use rustls::ClientConfig;
 use std::fmt::Display;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+/// The maximum time to establish the QUIC connection. Networks may drop UDP
+/// silently, and a server without HTTP/3 doesn't answer at all.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 
 fn http3_error(error: impl Display) -> TtfbError {
     TtfbError::Http3(error.to_string())
@@ -40,16 +44,18 @@ fn create_endpoint(
     Ok(endpoint)
 }
 
-/// Establishes the QUIC connection.
+/// Establishes the QUIC connection within [`CONNECT_TIMEOUT`].
 async fn connect(
     endpoint: &quinn::Endpoint,
     target: &Target,
 ) -> Result<quinn::Connection, TtfbError> {
     let server_name = tls::server_name(&target.url)?;
-    endpoint
+    let connecting = endpoint
         .connect((target.address, target.port).into(), &server_name.to_str())
-        .map_err(unavailable)?
+        .map_err(unavailable)?;
+    tokio::time::timeout(CONNECT_TIMEOUT, connecting)
         .await
+        .map_err(|_| unavailable("the connection attempt timed out"))?
         .map_err(unavailable)
 }
 
