@@ -44,6 +44,8 @@ only change something for the binary.
 ## ttfb binary
 
 - The output shows the HTTP protocol and the download of the response.
+- The output shows the QUIC handshake of HTTP/3 measurements instead of the
+  TCP connect and the TLS handshake.
 
 # v1.15.0 (2025-04-02)
 

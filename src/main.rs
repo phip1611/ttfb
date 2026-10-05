@@ -116,19 +116,29 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         }
         println!();
     }
-    if let ConnectionHandshake::Tcp { connect, tls } = ttfb.connection_handshake() {
-        println!(
-            "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
-            property = "TCP connect",
-            rel_time = connect.relative().as_secs_f64() * 1000.0,
-            abs_time = connect.total().as_secs_f64() * 1000.0,
-        );
-        if let Some(tls) = tls {
+    match ttfb.connection_handshake() {
+        ConnectionHandshake::Tcp { connect, tls } => {
             println!(
                 "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
-                property = "TLS Handshake",
-                rel_time = tls.relative().as_secs_f64() * 1000.0,
-                abs_time = tls.total().as_secs_f64() * 1000.0,
+                property = "TCP connect",
+                rel_time = connect.relative().as_secs_f64() * 1000.0,
+                abs_time = connect.total().as_secs_f64() * 1000.0,
+            );
+            if let Some(tls) = tls {
+                println!(
+                    "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
+                    property = "TLS Handshake",
+                    rel_time = tls.relative().as_secs_f64() * 1000.0,
+                    abs_time = tls.total().as_secs_f64() * 1000.0,
+                );
+            }
+        }
+        ConnectionHandshake::Quic(handshake) => {
+            println!(
+                "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
+                property = "QUIC Handshake",
+                rel_time = handshake.relative().as_secs_f64() * 1000.0,
+                abs_time = handshake.total().as_secs_f64() * 1000.0,
             );
         }
     }
