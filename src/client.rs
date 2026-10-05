@@ -16,8 +16,8 @@ use std::sync::Arc;
 /// Which HTTP protocol a [`TtfbClient`] measures.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub enum ProtocolSelection {
-    /// Let the client choose the HTTP protocol. Currently, this is always
-    /// HTTP/1.1.
+    /// Let the client choose the best available HTTP protocol: HTTP/3, then
+    /// HTTP/2, then HTTP/1.1.
     #[default]
     Auto,
     /// Measure only this protocol.
@@ -55,6 +55,11 @@ impl TtfbClient {
         }
     }
 
+    /// Measures `target` via HTTP/1.1.
+    fn measure_http11(&self, target: &Target) -> Result<TtfbOutcome, TtfbError> {
+        http11::measure(target, Arc::clone(&self.tls_config))
+    }
+
     /// Measures `target` via HTTP/2. The asynchronous exchange runs on a
     /// dedicated Tokio runtime.
     #[cfg(feature = "http2")]
@@ -85,6 +90,23 @@ impl TtfbClient {
         ))
     }
 
+    /// Measures `target` with the best protocol that is available: HTTP/3, then
+    /// HTTP/2, then HTTP/1.1. Plain HTTP only supports HTTP/1.1.
+    fn measure_auto(&self, target: &Target) -> Result<TtfbOutcome, TtfbError> {
+        if target.url.scheme() != "https" {
+            return self.measure_http11(target);
+        }
+        self.measure_http3(target)
+            .or_else(|error| match error {
+                TtfbError::UnsupportedHttpProtocol(_) => self.measure_http2(target),
+                error => Err(error),
+            })
+            .or_else(|error| match error {
+                TtfbError::UnsupportedHttpProtocol(_) => self.measure_http11(target),
+                error => Err(error),
+            })
+    }
+
     /// Measures one GET request to `input`.
     ///
     /// `input` is a URL pointing to an HTTP server, such as:
@@ -100,9 +122,8 @@ impl TtfbClient {
     pub fn measure(&self, input: impl AsRef<str>) -> Result<TtfbOutcome, TtfbError> {
         let target = Target::resolve(input.as_ref())?;
         let outcome = match self.options.protocol {
-            ProtocolSelection::Auto | ProtocolSelection::Only(HttpProtocol::Http11) => {
-                http11::measure(&target, Arc::clone(&self.tls_config))
-            }
+            ProtocolSelection::Auto => self.measure_auto(&target),
+            ProtocolSelection::Only(HttpProtocol::Http11) => self.measure_http11(&target),
             ProtocolSelection::Only(HttpProtocol::Http2) => self.measure_http2(&target),
             ProtocolSelection::Only(HttpProtocol::Http3) => self.measure_http3(&target),
         }?;
