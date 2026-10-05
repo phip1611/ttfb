@@ -3,7 +3,7 @@
 //! HTTP/1.1 measurements over TCP or TLS, including the response framing.
 
 use crate::target::Target;
-use crate::{CRATE_VERSION, TtfbError, TtfbOutcome, tls};
+use crate::{CRATE_VERSION, HttpProtocol, TtfbError, TtfbOutcome, tls};
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{IpAddr, TcpStream};
@@ -342,6 +342,7 @@ pub fn measure(target: &Target, tls_config: Arc<ClientConfig>) -> Result<TtfbOut
         http_get_send_duration,
         http_ttfb_duration,
         http_content_download_duration,
+        HttpProtocol::Http11,
     ))
 }
 

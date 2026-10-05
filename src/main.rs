@@ -25,8 +25,7 @@ use crossterm::ExecutableCommand;
 use crossterm::style::{Attribute, SetAttribute};
 use std::io::stdout;
 use std::process::exit;
-use ttfb::TtfbError;
-use ttfb::TtfbOutcome;
+use ttfb::{HttpProtocol, ProtocolSelection, TtfbClient, TtfbError, TtfbOptions, TtfbOutcome};
 
 const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -62,7 +61,11 @@ struct TtfbArgs {
 /// Small CLI binary wrapper around the [`ttfb`] lib.
 fn main() {
     let input: TtfbArgs = TtfbArgs::parse();
-    let res = ttfb::ttfb(input.host, input.allow_insecure_certificates);
+    let client = TtfbClient::new(TtfbOptions {
+        protocol: ProtocolSelection::Only(HttpProtocol::Http11),
+        allow_insecure_certificates: input.allow_insecure_certificates,
+    });
+    let res = client.measure(input.host);
     let ttfb = unwrap_or_exit!(res);
     print_outcome(&ttfb).unwrap();
 }

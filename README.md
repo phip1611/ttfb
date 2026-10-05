@@ -17,13 +17,22 @@ CLI + lib work on Linux, MacOS, and Windows.
 
 ## Usage Binary/CLI tool
 Install with `cargo install ttfb --features bin`. It takes one argument and passes it to the library.
-The string you pass here as first argument is the same as for the library function.
+The string you pass here as first argument is the same as for `TtfbClient::measure()`.
 
 Additionally, the CLI takes a `-k/--insecure` option. \
 Example: `$ ttfb -k https://expired.badssl.com`
 
 ## Usage Library
-The library exposes the function `ttfb(url: String)`. The string can be for example:
+The library exposes `TtfbClient`:
+
+```rust
+use ttfb::{TtfbClient, TtfbOptions};
+
+let client = TtfbClient::new(TtfbOptions::default());
+let outcome = client.measure("https://phip1611.de")?;
+```
+
+The input string can be for example:
 - `phip1611.de` (defaults to `http://`)
 - `http://phip1611.de`
 - `https://phip1611.de`
