@@ -110,20 +110,21 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         }
         println!();
     }
-    let ConnectionHandshake::Tcp { connect, tls } = ttfb.connection_handshake();
-    println!(
-        "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
-        property = "TCP connect",
-        rel_time = connect.relative().as_secs_f64() * 1000.0,
-        abs_time = connect.total().as_secs_f64() * 1000.0,
-    );
-    if let Some(tls) = tls {
+    if let ConnectionHandshake::Tcp { connect, tls } = ttfb.connection_handshake() {
         println!(
             "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
-            property = "TLS Handshake",
-            rel_time = tls.relative().as_secs_f64() * 1000.0,
-            abs_time = tls.total().as_secs_f64() * 1000.0,
+            property = "TCP connect",
+            rel_time = connect.relative().as_secs_f64() * 1000.0,
+            abs_time = connect.total().as_secs_f64() * 1000.0,
         );
+        if let Some(tls) = tls {
+            println!(
+                "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
+                property = "TLS Handshake",
+                rel_time = tls.relative().as_secs_f64() * 1000.0,
+                abs_time = tls.total().as_secs_f64() * 1000.0,
+            );
+        }
     }
     println!(
         "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",

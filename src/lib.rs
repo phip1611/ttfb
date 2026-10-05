@@ -2,8 +2,8 @@
 
 //! Library + CLI-Tool to measure the TTFB (time to first byte) of HTTP(S) requests.
 //! Additionally, this crate measures the times of DNS lookup, TCP connect, and
-//! TLS handshake. This crate supports HTTP/1.1 and, with the `http2` feature,
-//! HTTP/2. It can cope with TLS 1.2 and 1.3.
+//! TLS handshake. This crate supports HTTP/1.1 and, with the `http2` and
+//! `http3` features, HTTP/2 and HTTP/3. It can cope with TLS 1.2 and 1.3.
 //!
 //! See [`TtfbClient`], which is the entry point of the public interface.
 //!
@@ -29,12 +29,19 @@ pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
 pub use outcome::{ConnectionHandshake, DurationPair, HttpProtocol, TtfbOutcome};
 
 use std::{panic, thread};
+#[cfg(any(feature = "http2", feature = "http3"))]
+use {
+    http::header::{ACCEPT, ACCEPT_ENCODING, USER_AGENT},
+    url::Url,
+};
 
 mod client;
 mod error;
 mod http11;
 #[cfg(feature = "http2")]
 mod http2;
+#[cfg(feature = "http3")]
+mod http3;
 mod outcome;
 mod target;
 mod tls;
@@ -67,4 +74,17 @@ where
             .join()
             .unwrap_or_else(|panic| panic::resume_unwind(panic))
     })
+}
+
+/// Builds the GET request for HTTP/2 and HTTP/3. Both derive the `:scheme`,
+/// `:authority`, and `:path` pseudo-header fields from the absolute URI, which
+/// excludes the fragment.
+#[cfg(any(feature = "http2", feature = "http3"))]
+fn build_http_request(url: &Url) -> Result<http::Request<()>, TtfbError> {
+    http::Request::get(&url[..url::Position::AfterQuery])
+        .header(USER_AGENT, format!("ttfb/{CRATE_VERSION}"))
+        .header(ACCEPT, "*/*")
+        .header(ACCEPT_ENCODING, "gzip, deflate, br, zstd")
+        .body(())
+        .map_err(|error| TtfbError::InvalidUrl(InvalidUrlError::WrongFormat(error.to_string())))
 }

@@ -68,6 +68,29 @@ jobs:
       - name: Build
         run: cargo test --all-targets --verbose
 
+  # Each protocol has a Cargo feature. Without it, the code paths that report
+  # the protocol as unsupported are built instead.
+  feature_combinations:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features:
+          - --no-default-features
+          - --no-default-features --features http2
+          - --no-default-features --features http3
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.features }}
+      - run: cargo clippy --all-targets ${{ matrix.features }}
+      - run: cargo test --all-targets ${{ matrix.features }}
+
   network_tests:
     runs-on: ubuntu-latest
     env:
