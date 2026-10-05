@@ -30,7 +30,8 @@ pub struct TtfbOptions {
     pub allow_insecure_certificates: bool,
     /// Whether to send the request as TLS 1.3 early data (0-RTT). A warm-up
     /// request first obtains a TLS session, which the measured request
-    /// resumes. Requires an HTTPS URL and [`HttpProtocol::Http11`].
+    /// resumes. Requires an HTTPS URL and [`HttpProtocol::Http11`] or
+    /// [`HttpProtocol::Http2`].
     pub zero_rtt: bool,
 }
 
@@ -65,11 +66,17 @@ impl TtfbClient {
         http11::measure(target, Arc::clone(&self.tls_config), self.options.zero_rtt)
     }
 
-    /// Measures `target` via HTTP/2. The asynchronous exchange runs on a
-    /// dedicated Tokio runtime.
+    /// Measures `target` via HTTP/2, with a warm-up request first if 0-RTT is
+    /// enabled. The asynchronous exchanges run on a dedicated Tokio runtime.
     #[cfg(feature = "http2")]
     fn measure_http2(&self, target: &Target) -> Result<TtfbOutcome, TtfbError> {
-        run_in_tokio(http2::measure(target, Arc::clone(&self.tls_config)))
+        run_in_tokio(async {
+            if self.options.zero_rtt {
+                // The warm-up obtains a session ticket for the measured connection.
+                http2::measure(target, Arc::clone(&self.tls_config), false).await?;
+            }
+            http2::measure(target, Arc::clone(&self.tls_config), self.options.zero_rtt).await
+        })
     }
 
     /// Fails, as the crate was built without the `http2` feature.
@@ -93,11 +100,9 @@ impl TtfbClient {
     /// - `12.34.56.78/foobar` (defaults to `http://`)
     /// - `12.34.56.78` (defaults to `http://`)
     pub fn measure(&self, input: impl AsRef<str>) -> Result<TtfbOutcome, TtfbError> {
-        if self.options.zero_rtt
-            && self.options.protocol != ProtocolSelection::Only(HttpProtocol::Http11)
-        {
+        if self.options.zero_rtt && self.options.protocol == ProtocolSelection::Auto {
             return Err(TtfbError::UnsupportedHttpProtocol(
-                "0-RTT requires HTTP/1.1 to be selected".into(),
+                "0-RTT requires HTTP/1.1 or HTTP/2 to be selected".into(),
             ));
         }
         let target = Target::resolve(input.as_ref())?;

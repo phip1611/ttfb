@@ -30,12 +30,12 @@ only change something for the binary.
 - Added HTTP/2 measurements over TLS with `HttpProtocol::Http2`. They need
   the Cargo feature `http2`, which is enabled by default. Without it, they
   fail with the new `TtfbError::UnsupportedHttpProtocol`.
-- Added TLS 1.3 0-RTT measurements for HTTP/1.1 with `TtfbOptions::zero_rtt`.
-  A warm-up request obtains a TLS session, then the measured request is sent
-  as early data. `TtfbOutcome::zero_rtt_status()` reports with the new
-  `ZeroRttStatus` whether the server accepted the early data or the request had
-  to be replayed. `TtfbOutcome::zero_rtt_duration()` reports when the early
-  request was sent.
+- Added TLS 1.3 0-RTT measurements for HTTP/1.1 and HTTP/2 with
+  `TtfbOptions::zero_rtt`. A warm-up request obtains a TLS session, then the
+  measured request is sent as early data. `TtfbOutcome::zero_rtt_status()`
+  reports with the new `ZeroRttStatus` whether the server accepted the early
+  data or the request had to be replayed. `TtfbOutcome::zero_rtt_duration()`
+  reports when the early request was sent.
 
 ## ttfb binary
 

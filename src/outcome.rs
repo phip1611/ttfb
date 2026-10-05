@@ -231,7 +231,8 @@ impl TtfbOutcome {
     }
 
     /// Returns the time from TCP connection completion until the request was
-    /// sent as early data.
+    /// sent as early data. For HTTP/2, the request is queued at that point and
+    /// written together with the ClientHello right after.
     ///
     /// This duration overlaps the TLS handshake and is therefore not part of the normal
     /// sequential timing chain.
