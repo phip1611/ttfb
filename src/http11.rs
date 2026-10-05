@@ -4,7 +4,7 @@
 
 use crate::outcome::TtfbTimings;
 use crate::target::Target;
-use crate::{CRATE_VERSION, HttpProtocol, TtfbError, TtfbOutcome, tls};
+use crate::{CRATE_VERSION, HttpProtocol, TtfbError, TtfbOutcome, ZeroRttStatus, tls};
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{IpAddr, TcpStream};
@@ -49,16 +49,22 @@ pub enum Framing {
 /// Sets the following default headers:
 /// - `Accept-Encoding: gzip, deflate, br, zstd` (default of Chrome v123)
 /// - `User-Agent: ttfb/<version>`
-fn build_request(url: &Url) -> String {
+/// - `Connection: close` with `close_connection`
+fn build_request(url: &Url, close_connection: bool) -> String {
     let path = &url[url::Position::BeforePath..url::Position::AfterQuery];
     let host = &url[url::Position::BeforeHost..url::Position::AfterPort];
+    let connection = if close_connection {
+        "Connection: close\r\n"
+    } else {
+        ""
+    };
     format!(
         "GET {path} HTTP/1.1\r\n\
         Host: {host}\r\n\
         User-Agent: ttfb/{CRATE_VERSION}\r\n\
         Accept: */*\r\n\
         Accept-Encoding: gzip, deflate, br, zstd\r\n\
-        Connection: close\r\n\
+        {connection}\
         \r\n"
     )
 }
@@ -272,58 +278,169 @@ fn tcp_connect(addr: IpAddr, port: u16) -> Result<(TcpStream, Duration), TtfbErr
     Ok((tcp, tcp_connect_duration))
 }
 
+/// A request that was sent as TLS 1.3 early data.
+struct EarlyData {
+    /// The duration from the start of the TLS handshake until the request was
+    /// sent.
+    sent_after: Duration,
+    /// The moment the request was sent.
+    sent_at: Instant,
+    /// The duration of writing the request and the ClientHello.
+    send_duration: Duration,
+    /// Whether the server accepted the early data. Otherwise, the request has
+    /// to be sent again after the handshake.
+    accepted: bool,
+}
+
+/// A connection that is ready for the HTTP exchange.
+struct Connection {
+    /// The TCP stream, or the TLS stream on top of it.
+    stream: Box<dyn IoReadAndWrite>,
+    /// The duration of the TLS handshake, if TLS is used.
+    tls_handshake_duration: Option<Duration>,
+    /// The request sent as early data, if any.
+    early_data: Option<EarlyData>,
+}
+
+/// Sends `request` as TLS 1.3 early data together with the ClientHello, if
+/// the resumed TLS session permits it.
+///
+/// The server limits the amount of early data. A request that doesn't fit
+/// isn't sent here but after the handshake.
+fn send_early_data(
+    connection: &mut ClientConnection,
+    tcp: &mut TcpStream,
+    request: &[u8],
+    handshake_begin: Instant,
+) -> Result<Option<EarlyData>, TtfbError> {
+    let Some(mut writer) = connection
+        .early_data()
+        .filter(|writer| writer.bytes_left() >= request.len())
+    else {
+        return Ok(None);
+    };
+    let send_begin = Instant::now();
+    writer
+        .write_all(request)
+        .map_err(TtfbError::CantConnectHttp)?;
+    while connection.wants_write() {
+        connection
+            .write_tls(tcp)
+            .map_err(TtfbError::CantConnectHttp)?;
+    }
+    Ok(Some(EarlyData {
+        sent_after: handshake_begin.elapsed(),
+        sent_at: Instant::now(),
+        send_duration: send_begin.elapsed(),
+        accepted: false,
+    }))
+}
+
 /// If the scheme is "https", this replaces the TCP-Stream with a `TLS<TCP>`-stream.
 /// If TLS is used, it measures the time of the TLS handshake.
+///
+/// With `early_request`, the request is sent as TLS 1.3 early data together
+/// with the ClientHello, if the resumed TLS session permits it.
 fn tls_handshake_if_necessary(
     mut tcp: TcpStream,
     url: &Url,
     tls_config: Arc<ClientConfig>,
-) -> Result<(Box<dyn IoReadAndWrite>, Option<Duration>), TtfbError> {
-    if url.scheme() == "https" {
-        let server_name = tls::server_name(url)?;
-        let now = Instant::now();
-        let mut connection = ClientConnection::new(tls_config, server_name)
-            .map_err(|error| TtfbError::Tls(error.to_string()))?;
-        // Performs IO until the handshake is complete.
-        connection
-            .complete_io(&mut tcp)
-            .map_err(|error| TtfbError::Tls(error.to_string()))?;
-        let tls_handshake_duration = now.elapsed();
-        Ok((
-            Box::new(StreamOwned::new(connection, tcp)),
-            Some(tls_handshake_duration),
-        ))
-    } else {
-        Ok((Box::new(tcp), None))
+    early_request: Option<&[u8]>,
+) -> Result<Connection, TtfbError> {
+    if url.scheme() != "https" {
+        return Ok(Connection {
+            stream: Box::new(tcp),
+            tls_handshake_duration: None,
+            early_data: None,
+        });
     }
+
+    let server_name = tls::server_name(url)?;
+    let now = Instant::now();
+    let mut connection = ClientConnection::new(tls_config, server_name)
+        .map_err(|error| TtfbError::Tls(error.to_string()))?;
+
+    // Send the request early, if requested and possible.
+    let mut early_data = match early_request {
+        Some(request) => send_early_data(&mut connection, &mut tcp, request, now)?,
+        None => None,
+    };
+
+    // Complete the handshake and learn whether the server accepted the early
+    // data.
+    connection
+        .complete_io(&mut tcp)
+        .map_err(|error| TtfbError::Tls(error.to_string()))?;
+    let tls_handshake_duration = now.elapsed();
+    if let Some(early_data) = &mut early_data {
+        early_data.accepted = connection.is_early_data_accepted();
+    }
+
+    Ok(Connection {
+        stream: Box::new(StreamOwned::new(connection, tcp)),
+        tls_handshake_duration: Some(tls_handshake_duration),
+        early_data,
+    })
 }
 
 /// Measures one GET request via HTTP/1.1: TCP connect, the TLS handshake for
 /// HTTPS, sending the request, the first response byte, and the download of
 /// the complete response.
-pub fn measure(target: &Target, tls_config: Arc<ClientConfig>) -> Result<TtfbOutcome, TtfbError> {
-    // Connect, with a TLS handshake for HTTPS.
-    let (tcp, tcp_connect_duration) = tcp_connect(target.address, target.port)?;
-    let (mut tcp, tls_handshake_duration) =
-        tls_handshake_if_necessary(tcp, &target.url, tls_config)?;
+///
+/// With `try_zero_rtt`, the request is sent as TLS 1.3 early data if the
+/// resumed TLS session permits it. If the server rejects the early data, the
+/// request is sent again after the handshake.
+pub fn measure(
+    target: &Target,
+    tls_config: Arc<ClientConfig>,
+    try_zero_rtt: bool,
+) -> Result<TtfbOutcome, TtfbError> {
+    // A server may answer an early request before it has read the rest of
+    // the handshake. If it then closes the connection as requested, the
+    // unread handshake messages make the kernel reset the connection, which
+    // discards the response in transit. Hence, with 0-RTT, the request keeps
+    // the connection open, also if it is sent after the handshake; the
+    // response framing tells where the response ends.
+    let header = build_request(&target.url, !try_zero_rtt);
 
-    // Send the request.
-    let http_get_send_duration = {
-        let header = build_request(&target.url);
-        let now = Instant::now();
-        tcp.write_all(header.as_bytes())
-            .map_err(TtfbError::CantConnectHttp)?;
-        tcp.flush().map_err(TtfbError::OtherStreamError)?;
-        now.elapsed()
+    // Connect, with a TLS handshake for HTTPS, which may carry the request.
+    let (tcp, tcp_connect_duration) = tcp_connect(target.address, target.port)?;
+    let Connection {
+        stream: mut tcp,
+        tls_handshake_duration,
+        early_data,
+    } = tls_handshake_if_necessary(
+        tcp,
+        &target.url,
+        tls_config,
+        try_zero_rtt.then_some(header.as_bytes()),
+    )?;
+    let zero_rtt_status = try_zero_rtt.then_some(match &early_data {
+        None => ZeroRttStatus::Unavailable,
+        Some(early_data) if early_data.accepted => ZeroRttStatus::Accepted,
+        Some(_) => ZeroRttStatus::Replayed,
+    });
+
+    // Send the request, unless the server accepted it as early data. An
+    // accepted early request waits for its response from the moment it was
+    // sent, which includes the remainder of the TLS handshake.
+    let (http_get_send_duration, ttfb_begin) = match &early_data {
+        Some(early_data) if early_data.accepted => (early_data.send_duration, early_data.sent_at),
+        _ => {
+            let now = Instant::now();
+            tcp.write_all(header.as_bytes())
+                .map_err(TtfbError::CantConnectHttp)?;
+            tcp.flush().map_err(TtfbError::OtherStreamError)?;
+            (now.elapsed(), Instant::now())
+        }
     };
 
     // Wait for the first byte of the response.
     let mut first_byte = [0_u8];
     let http_ttfb_duration = {
-        let now = Instant::now();
         tcp.read_exact(&mut first_byte)
             .map_err(|_e| TtfbError::NoHttpResponse)?;
-        now.elapsed()
+        ttfb_begin.elapsed()
     };
 
     // Read the rest of the response.
@@ -344,10 +461,10 @@ pub fn measure(target: &Target, tls_config: Arc<ClientConfig>) -> Result<TtfbOut
             http_get_send: http_get_send_duration,
             http_ttfb: http_ttfb_duration,
             http_content_download: http_content_download_duration,
-            zero_rtt: None,
+            zero_rtt: early_data.map(|early_data| early_data.sent_after),
         },
         HttpProtocol::Http11,
-        None,
+        zero_rtt_status,
     ))
 }
 
@@ -424,7 +541,7 @@ mod tests {
     #[test]
     fn request_includes_query_and_non_default_port() {
         let url = Url::parse("http://localhost:8080/path?query=yes#fragment").unwrap();
-        let request = build_request(&url);
+        let request = build_request(&url, true);
         assert!(request.starts_with("GET /path?query=yes HTTP/1.1\r\n"));
         assert!(request.contains("\r\nHost: localhost:8080\r\n"));
         assert!(!request.contains("fragment"));
@@ -442,9 +559,10 @@ mod network_tests {
     fn framing_of(url: &str) -> Result<Framing, TtfbError> {
         let target = Target::resolve(url)?;
         let (tcp, _) = tcp_connect(target.address, target.port)?;
-        let (mut stream, _) = tls_handshake_if_necessary(tcp, &target.url, tls::config(false))?;
+        let mut stream =
+            tls_handshake_if_necessary(tcp, &target.url, tls::config(false, false), None)?.stream;
         stream
-            .write_all(build_request(&target.url).as_bytes())
+            .write_all(build_request(&target.url, true).as_bytes())
             .map_err(TtfbError::CantConnectHttp)?;
         let mut first_byte = [0];
         stream

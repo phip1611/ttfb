@@ -28,6 +28,10 @@ pub struct TtfbOptions {
     /// Whether invalid TLS certificates (untrusted, expired, wrong host)
     /// are accepted. Similar to `-k/--insecure` in `curl`.
     pub allow_insecure_certificates: bool,
+    /// Whether to send the request as TLS 1.3 early data (0-RTT). A warm-up
+    /// request first obtains a TLS session, which the measured request
+    /// resumes. Requires an HTTPS URL and [`HttpProtocol::Http11`].
+    pub zero_rtt: bool,
 }
 
 /// Measures the TTFB (time to first byte) of HTTP(S) requests, including the
@@ -46,9 +50,19 @@ impl TtfbClient {
     #[must_use]
     pub fn new(options: TtfbOptions) -> Self {
         Self {
-            tls_config: tls::config(options.allow_insecure_certificates),
+            tls_config: tls::config(options.allow_insecure_certificates, options.zero_rtt),
             options,
         }
+    }
+
+    /// Measures `target` via HTTP/1.1, with a warm-up request first if 0-RTT is
+    /// enabled.
+    fn measure_http11(&self, target: &Target) -> Result<TtfbOutcome, TtfbError> {
+        if self.options.zero_rtt {
+            // The warm-up obtains a session ticket for the measured connection.
+            http11::measure(target, Arc::clone(&self.tls_config), false)?;
+        }
+        http11::measure(target, Arc::clone(&self.tls_config), self.options.zero_rtt)
     }
 
     /// Measures `target` via HTTP/2. The asynchronous exchange runs on a
@@ -79,10 +93,22 @@ impl TtfbClient {
     /// - `12.34.56.78/foobar` (defaults to `http://`)
     /// - `12.34.56.78` (defaults to `http://`)
     pub fn measure(&self, input: impl AsRef<str>) -> Result<TtfbOutcome, TtfbError> {
+        if self.options.zero_rtt
+            && self.options.protocol != ProtocolSelection::Only(HttpProtocol::Http11)
+        {
+            return Err(TtfbError::UnsupportedHttpProtocol(
+                "0-RTT requires HTTP/1.1 to be selected".into(),
+            ));
+        }
         let target = Target::resolve(input.as_ref())?;
+        if self.options.zero_rtt && target.url.scheme() != "https" {
+            return Err(TtfbError::UnsupportedHttpProtocol(
+                "0-RTT requires an HTTPS URL".into(),
+            ));
+        }
         let outcome = match self.options.protocol {
             ProtocolSelection::Auto | ProtocolSelection::Only(HttpProtocol::Http11) => {
-                http11::measure(&target, Arc::clone(&self.tls_config))
+                self.measure_http11(&target)
             }
             ProtocolSelection::Only(HttpProtocol::Http2) => self.measure_http2(&target),
         }?;
@@ -102,6 +128,7 @@ mod network_tests {
         TtfbClient::new(TtfbOptions {
             protocol: ProtocolSelection::Only(HttpProtocol::Http11),
             allow_insecure_certificates,
+            ..TtfbOptions::default()
         })
         .measure(input)
     }
