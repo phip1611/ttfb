@@ -16,9 +16,6 @@ use url::{Host, Url};
 /// expired, wrong host), similar to `-k/--insecure` in `curl`. Otherwise, the
 /// system's root certificates and the bundled Mozilla root certificates are
 /// trusted.
-///
-/// rustls connections take the configuration as an [`Arc`], which lets them
-/// share it, including the root certificates, without copying it.
 pub fn config(allow_insecure_certificates: bool) -> Arc<ClientConfig> {
     let builder =
         ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
