@@ -25,7 +25,10 @@ use crossterm::ExecutableCommand;
 use crossterm::style::{Attribute, SetAttribute};
 use std::io::stdout;
 use std::process::exit;
-use ttfb::{HttpProtocol, ProtocolSelection, TtfbClient, TtfbError, TtfbOptions, TtfbOutcome};
+use ttfb::{
+    ConnectionHandshake, HttpProtocol, ProtocolSelection, TtfbClient, TtfbError, TtfbOptions,
+    TtfbOutcome,
+};
 
 const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -107,19 +110,19 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         }
         println!();
     }
+    let ConnectionHandshake::Tcp { connect, tls } = ttfb.connection_handshake();
     println!(
         "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
         property = "TCP connect",
-        rel_time = ttfb.tcp_connect_duration().relative().as_secs_f64() * 1000.0,
-        abs_time = ttfb.tcp_connect_duration().total().as_secs_f64() * 1000.0,
+        rel_time = connect.relative().as_secs_f64() * 1000.0,
+        abs_time = connect.total().as_secs_f64() * 1000.0,
     );
-    if let Some(duration_pair) = ttfb.tls_handshake_duration() {
+    if let Some(tls) = tls {
         println!(
             "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
             property = "TLS Handshake",
-            rel_time = duration_pair.relative().as_secs_f64() * 1000.0,
-            // for DNS abs and rel time is the same (because it happens first)
-            abs_time = duration_pair.total().as_secs_f64() * 1000.0,
+            rel_time = tls.relative().as_secs_f64() * 1000.0,
+            abs_time = tls.total().as_secs_f64() * 1000.0,
         );
     }
     println!(

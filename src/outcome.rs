@@ -58,16 +58,50 @@ impl DurationPair {
     }
 }
 
+/// How the connection was established, with the step durations.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ConnectionHandshake {
+    /// A TCP connection, followed by a TLS handshake if TLS is used.
+    Tcp {
+        /// The establishment of the TCP connection.
+        connect: DurationPair,
+        /// The TLS handshake, if TLS is used.
+        tls: Option<DurationPair>,
+    },
+}
+
+impl ConnectionHandshake {
+    /// Returns the total duration until the connection was established.
+    fn total(self) -> Duration {
+        match self {
+            Self::Tcp { connect, tls } => tls.unwrap_or(connect).total(),
+        }
+    }
+}
+
+/// Internal representation of [`ConnectionHandshake`] with the relative step
+/// durations. The protocols only measure how long each step took. The totals
+/// of the [`DurationPair`]s depend on the preceding steps, so only the outcome
+/// computes them.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Connect {
+    /// A TCP connection, followed by a TLS handshake if TLS is used.
+    Tcp {
+        /// The establishment of the TCP connection.
+        connect: Duration,
+        /// The TLS handshake, if TLS is used.
+        tls: Option<Duration>,
+    },
+}
+
 /// The relative durations of the measurement steps, i.e., how long each step
 /// itself took.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct TtfbTimings {
     /// The DNS lookup, if one was necessary.
     pub dns_lookup: Option<Duration>,
-    /// The establishment of the TCP connection.
-    pub tcp_connect: Duration,
-    /// The TLS handshake, if TLS is used.
-    pub tls_handshake: Option<Duration>,
+    /// Establishing the connection.
+    pub connect: Connect,
     /// Sending the HTTP GET request.
     pub http_get_send: Duration,
     /// Waiting for the first byte of the response.
@@ -138,27 +172,27 @@ impl TtfbOutcome {
             .map(|d| DurationPair::new(d, Duration::default()))
     }
 
-    /// Returns the [`DurationPair`] for the establishment of the TCP connection.
+    /// Returns how the connection was established, with the durations of its
+    /// steps.
     #[must_use]
-    pub fn tcp_connect_duration(&self) -> DurationPair {
-        let abs_dur_so_far = self.dns_lookup_duration().unwrap_or_default().total();
-        DurationPair::new(self.timings.tcp_connect, abs_dur_so_far)
-    }
-
-    /// Returns the [`DurationPair`] for the TLS handshake, if the TLS handshake was necessary.
-    #[must_use]
-    pub fn tls_handshake_duration(&self) -> Option<DurationPair> {
-        self.timings.tls_handshake.map(|dur| {
-            let abs_dur_so_far = self.tcp_connect_duration().total();
-            DurationPair::new(dur, abs_dur_so_far)
-        })
+    pub fn connection_handshake(&self) -> ConnectionHandshake {
+        let dns_end = self.dns_lookup_duration().unwrap_or_default().total();
+        match self.timings.connect {
+            Connect::Tcp { connect, tls } => {
+                let connect = DurationPair::new(connect, dns_end);
+                ConnectionHandshake::Tcp {
+                    connect,
+                    tls: tls.map(|tls| DurationPair::new(tls, connect.total())),
+                }
+            }
+        }
     }
 
     /// Returns the [`DurationPair`] for the transmission of the HTTP GET request.
     #[must_use]
     pub fn http_get_send_duration(&self) -> DurationPair {
-        let abs_dur_so_far = self.tls_handshake_duration().unwrap_or_default().total();
-        DurationPair::new(self.timings.http_get_send, abs_dur_so_far)
+        let connection_end = self.connection_handshake().total();
+        DurationPair::new(self.timings.http_get_send, connection_end)
     }
 
     /// Returns the [`DurationPair`] for the time to first byte (TTFB) of the HTTP response.
@@ -196,7 +230,7 @@ impl TtfbOutcome {
 
 #[cfg(test)]
 mod tests {
-    use crate::outcome::{HttpProtocol, TtfbOutcome, TtfbTimings};
+    use crate::outcome::{Connect, ConnectionHandshake, HttpProtocol, TtfbOutcome, TtfbTimings};
     use std::net::{IpAddr, Ipv4Addr};
     use std::time::Duration;
 
@@ -208,8 +242,10 @@ mod tests {
             443,
             TtfbTimings {
                 dns_lookup: Some(Duration::from_millis(1)),
-                tcp_connect: Duration::from_millis(2),
-                tls_handshake: Some(Duration::from_millis(3)),
+                connect: Connect::Tcp {
+                    connect: Duration::from_millis(2),
+                    tls: Some(Duration::from_millis(3)),
+                },
                 http_get_send: Duration::from_millis(4),
                 http_ttfb: Duration::from_millis(5),
                 http_content_download: Duration::from_millis(6),
@@ -221,18 +257,10 @@ mod tests {
             1,
             "DNS is the very first operation"
         );
+        let ConnectionHandshake::Tcp { connect, tls } = outcome.connection_handshake();
+        assert_eq!(connect.total().as_millis(), 1 + 2, "DNS + TCP connect");
         assert_eq!(
-            outcome.tcp_connect_duration().total().as_millis(),
-            1 + 2,
-            "DNS + TCP connect"
-        );
-        println!("{outcome:#?}");
-        assert_eq!(
-            outcome
-                .tls_handshake_duration()
-                .unwrap()
-                .total()
-                .as_millis(),
+            tls.unwrap().total().as_millis(),
             1 + 2 + 3,
             "DNS + TCP connect + TLS handshake"
         );

@@ -2,7 +2,7 @@
 
 //! HTTP/1.1 measurements over TCP or TLS, including the response framing.
 
-use crate::outcome::TtfbTimings;
+use crate::outcome::{Connect, TtfbTimings};
 use crate::target::Target;
 use crate::{CRATE_VERSION, HttpProtocol, TtfbError, TtfbOutcome, tls};
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
@@ -339,8 +339,10 @@ pub fn measure(target: &Target, tls_config: Arc<ClientConfig>) -> Result<TtfbOut
         target.port,
         TtfbTimings {
             dns_lookup: target.dns_duration,
-            tcp_connect: tcp_connect_duration,
-            tls_handshake: tls_handshake_duration,
+            connect: Connect::Tcp {
+                connect: tcp_connect_duration,
+                tls: tls_handshake_duration,
+            },
             http_get_send: http_get_send_duration,
             http_ttfb: http_ttfb_duration,
             http_content_download: http_content_download_duration,
