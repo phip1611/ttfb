@@ -19,12 +19,17 @@ only change something for the binary.
   The lib no longer depends on `rustls-connector`.
 - **BREAKING** `AllowInvalidCertsVerifier` is no longer public. It was
   exported by accident.
+- **BREAKING** `TtfbError` has the new variants `UnsupportedHttpProtocol` and
+  `Http2`.
 - TLS trusts the system's root certificates and the bundled Mozilla root
   certificates together. Previously, the bundled ones were only used if the
   system's could not be loaded.
 - HTTPS works with IPv6 addresses, such as `https://[2606:4700:4700::1111]`.
 - Added `TtfbOutcome::protocol()`, which reports the HTTP protocol used as
   `HttpProtocol`.
+- Added HTTP/2 measurements over TLS with `HttpProtocol::Http2`. They need
+  the Cargo feature `http2`, which is enabled by default. Without it, they
+  fail with the new `TtfbError::UnsupportedHttpProtocol`.
 
 ## ttfb binary
 

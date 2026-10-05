@@ -2,11 +2,10 @@
 
 //! URL parsing and DNS resolution of the measurement target.
 
-use crate::{InvalidUrlError, ResolveDnsError, TtfbError};
+use crate::{InvalidUrlError, ResolveDnsError, TtfbError, run_in_tokio};
 use hickory_resolver::Resolver as DnsResolver;
 use std::net::IpAddr;
 use std::str::FromStr;
-use std::thread;
 use std::time::{Duration, Instant};
 use url::Url;
 
@@ -86,39 +85,14 @@ fn resolve_dns(url: &Url) -> Result<(IpAddr, Duration), TtfbError> {
 
     let begin = Instant::now();
 
-    // We do the DNS resolving in a tokio runtime in a background task. There
-    // are two reasons for that:
-    // - I must use tokio because of `hickory_resolver`; I'd like to get rid of
-    //   it
-    // - This library is designed with a blocking API but should be embeddable
-    //   in a tokio runtime. To prevent the start of a tokio runtime in a thread
-    //   already having a tokio runtime, we spawn a dedicated thread.
-    //
-    // For the performance/measurements, this overhead is negligible.
-    //
-    // More info: https://stackoverflow.com/a/62536772/2891595
-    let response = {
-        thread::scope(|s| {
-            s.spawn(|| {
-                let tokio = tokio::runtime::Builder::new_current_thread()
-                    .enable_time()
-                    .enable_io()
-                    .build()
-                    .unwrap();
-                tokio.block_on(async {
-                    resolver
-                        .lookup_ip(url.host_str().unwrap())
-                        .await
-                        .map(|res| res.iter().collect::<Vec<IpAddr>>())
-                        .map_err(|err| {
-                            TtfbError::CantResolveDns(ResolveDnsError::Other(Box::new(err)))
-                        })
-                })
-            })
-            .join()
-            .unwrap()
-        })
-    }?;
+    // hickory_resolver requires Tokio.
+    let response = run_in_tokio(async {
+        resolver
+            .lookup_ip(url.host_str().unwrap())
+            .await
+            .map(|res| res.iter().collect::<Vec<IpAddr>>())
+            .map_err(|err| TtfbError::CantResolveDns(ResolveDnsError::Other(Box::new(err))))
+    })?;
 
     let duration = begin.elapsed();
 

@@ -80,6 +80,13 @@ pub enum TtfbError {
     /// The server returned an invalid or unsupported HTTP response.
     #[error("The HTTP response was invalid or unsupported: {0}")]
     InvalidHttpResponse(String),
+    /// The requested HTTP protocol can't be used for this URL or server, or
+    /// the crate was built without it.
+    #[error("The requested HTTP protocol can't be used: {0}")]
+    UnsupportedHttpProtocol(String),
+    /// An HTTP/2 exchange failed.
+    #[error("HTTP/2 failed: {0}")]
+    Http2(String),
     /// There was a problem with the TCP stream.
     #[error("There was a problem with the TCP stream because: {0}")]
     OtherStreamError(#[source] io::Error),
@@ -94,7 +101,9 @@ impl PartialEq for TtfbError {
             (Self::InvalidUrl(e1), Self::InvalidUrl(e2)) => e1.eq(e2),
             (Self::CantResolveDns(e1), Self::CantResolveDns(e2)) => e1.eq(e2),
             (Self::CantConnectTcp(e1), Self::CantConnectTcp(e2)) => e1.kind().eq(&e2.kind()),
-            (Self::Tls(e1), Self::Tls(e2)) => e1.eq(e2),
+            (Self::Tls(e1), Self::Tls(e2))
+            | (Self::UnsupportedHttpProtocol(e1), Self::UnsupportedHttpProtocol(e2))
+            | (Self::Http2(e1), Self::Http2(e2)) => e1.eq(e2),
             (Self::CantConnectHttp(e1), Self::OtherStreamError(e2)) => e1.kind().eq(&e2.kind()),
             (Self::CantConfigureDNSError(_e1), Self::CantConfigureDNSError(_e2)) => {
                 // nah, ignore it. Proper deep check is too complex.
