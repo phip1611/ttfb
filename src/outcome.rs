@@ -58,6 +58,24 @@ impl DurationPair {
     }
 }
 
+/// The relative durations of the measurement steps, i.e., how long each step
+/// itself took.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct TtfbTimings {
+    /// The DNS lookup, if one was necessary.
+    pub dns_lookup: Option<Duration>,
+    /// The establishment of the TCP connection.
+    pub tcp_connect: Duration,
+    /// The TLS handshake, if TLS is used.
+    pub tls_handshake: Option<Duration>,
+    /// Sending the HTTP GET request.
+    pub http_get_send: Duration,
+    /// Waiting for the first byte of the response.
+    pub http_ttfb: Duration,
+    /// Receiving the rest of the response.
+    pub http_content_download: Duration,
+}
+
 /// The final result of this library. It contains all the measured timings.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TtfbOutcome {
@@ -67,19 +85,8 @@ pub struct TtfbOutcome {
     ip_addr: IpAddr,
     /// The port.
     port: u16,
-    /// If DNS was required, the relative duration of this operation.
-    dns_duration_rel: Option<Duration>,
-    /// Relative duration of the TCP connection start.
-    tcp_connect_duration_rel: Duration,
-    /// If https is used, the relative duration of the TLS handshake.
-    tls_handshake_duration_rel: Option<Duration>,
-    /// The relative duration of the HTTP GET request sending.
-    http_get_send_duration_rel: Duration,
-    /// The relative duration until the first byte from the HTTP response (the header) was
-    /// received.
-    http_ttfb_duration_rel: Duration,
-    /// The relative duration from the first response byte until the complete response.
-    http_content_download_duration_rel: Duration,
+    /// The relative durations of the measurement steps.
+    timings: TtfbTimings,
     /// The protocol used for the request.
     protocol: HttpProtocol,
     /// How the protocol was selected.
@@ -87,29 +94,18 @@ pub struct TtfbOutcome {
 }
 
 impl TtfbOutcome {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) const fn new(
         user_input: String,
         ip_addr: IpAddr,
         port: u16,
-        dns_duration_rel: Option<Duration>,
-        tcp_connect_duration_rel: Duration,
-        tls_handshake_duration_rel: Option<Duration>,
-        http_get_send_duration_rel: Duration,
-        http_ttfb_duration_rel: Duration,
-        http_content_download_duration_rel: Duration,
+        timings: TtfbTimings,
         protocol: HttpProtocol,
     ) -> Self {
         Self {
             user_input,
             ip_addr,
             port,
-            dns_duration_rel,
-            tcp_connect_duration_rel,
-            tls_handshake_duration_rel,
-            http_get_send_duration_rel,
-            http_ttfb_duration_rel,
-            http_content_download_duration_rel,
+            timings,
             protocol,
             protocol_selection: ProtocolSelection::Only(protocol),
         }
@@ -137,7 +133,8 @@ impl TtfbOutcome {
     /// Returns the [`DurationPair`] for the DNS step, if DNS lookup was necessary.
     #[must_use]
     pub fn dns_lookup_duration(&self) -> Option<DurationPair> {
-        self.dns_duration_rel
+        self.timings
+            .dns_lookup
             .map(|d| DurationPair::new(d, Duration::default()))
     }
 
@@ -145,13 +142,13 @@ impl TtfbOutcome {
     #[must_use]
     pub fn tcp_connect_duration(&self) -> DurationPair {
         let abs_dur_so_far = self.dns_lookup_duration().unwrap_or_default().total();
-        DurationPair::new(self.tcp_connect_duration_rel, abs_dur_so_far)
+        DurationPair::new(self.timings.tcp_connect, abs_dur_so_far)
     }
 
     /// Returns the [`DurationPair`] for the TLS handshake, if the TLS handshake was necessary.
     #[must_use]
     pub fn tls_handshake_duration(&self) -> Option<DurationPair> {
-        self.tls_handshake_duration_rel.map(|dur| {
+        self.timings.tls_handshake.map(|dur| {
             let abs_dur_so_far = self.tcp_connect_duration().total();
             DurationPair::new(dur, abs_dur_so_far)
         })
@@ -161,21 +158,21 @@ impl TtfbOutcome {
     #[must_use]
     pub fn http_get_send_duration(&self) -> DurationPair {
         let abs_dur_so_far = self.tls_handshake_duration().unwrap_or_default().total();
-        DurationPair::new(self.http_get_send_duration_rel, abs_dur_so_far)
+        DurationPair::new(self.timings.http_get_send, abs_dur_so_far)
     }
 
     /// Returns the [`DurationPair`] for the time to first byte (TTFB) of the HTTP response.
     #[must_use]
     pub fn ttfb_duration(&self) -> DurationPair {
         let abs_dur_so_far = self.http_get_send_duration().total();
-        DurationPair::new(self.http_ttfb_duration_rel, abs_dur_so_far)
+        DurationPair::new(self.timings.http_ttfb, abs_dur_so_far)
     }
 
     /// Returns the time from the first response byte until the complete response message.
     #[must_use]
     pub fn http_content_download_duration(&self) -> DurationPair {
         let abs_dur_so_far = self.ttfb_duration().total();
-        DurationPair::new(self.http_content_download_duration_rel, abs_dur_so_far)
+        DurationPair::new(self.timings.http_content_download, abs_dur_so_far)
     }
 
     /// Returns the HTTP protocol used for the request.
@@ -199,7 +196,7 @@ impl TtfbOutcome {
 
 #[cfg(test)]
 mod tests {
-    use crate::outcome::{HttpProtocol, TtfbOutcome};
+    use crate::outcome::{HttpProtocol, TtfbOutcome, TtfbTimings};
     use std::net::{IpAddr, Ipv4Addr};
     use std::time::Duration;
 
@@ -209,12 +206,14 @@ mod tests {
             "https://phip1611.de".to_string(),
             IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
             443,
-            Some(Duration::from_millis(1)),
-            Duration::from_millis(2),
-            Some(Duration::from_millis(3)),
-            Duration::from_millis(4),
-            Duration::from_millis(5),
-            Duration::from_millis(6),
+            TtfbTimings {
+                dns_lookup: Some(Duration::from_millis(1)),
+                tcp_connect: Duration::from_millis(2),
+                tls_handshake: Some(Duration::from_millis(3)),
+                http_get_send: Duration::from_millis(4),
+                http_ttfb: Duration::from_millis(5),
+                http_content_download: Duration::from_millis(6),
+            },
             HttpProtocol::Http11,
         );
         assert_eq!(
