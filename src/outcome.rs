@@ -27,6 +27,17 @@ impl Display for HttpProtocol {
     }
 }
 
+/// Whether TLS 1.3 early data was used for a measurement.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ZeroRttStatus {
+    /// The warm-up did not produce a session that permits early data.
+    Unavailable,
+    /// Early data was sent and accepted by the server.
+    Accepted,
+    /// Early data was sent, rejected, and the request was replayed.
+    Replayed,
+}
+
 /// Bundles the duration of a measurement step with the total duration since
 /// the beginning of the overall measurement.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -74,6 +85,9 @@ pub struct TtfbTimings {
     pub http_ttfb: Duration,
     /// Receiving the rest of the response.
     pub http_content_download: Duration,
+    /// From the end of the TCP connect until the request was sent as TLS 1.3
+    /// early data, if it was.
+    pub zero_rtt: Option<Duration>,
 }
 
 /// The final result of this library. It contains all the measured timings.
@@ -91,6 +105,8 @@ pub struct TtfbOutcome {
     protocol: HttpProtocol,
     /// How the protocol was selected.
     protocol_selection: ProtocolSelection,
+    /// The outcome of a TLS 1.3 early-data attempt.
+    zero_rtt_status: Option<ZeroRttStatus>,
 }
 
 impl TtfbOutcome {
@@ -100,6 +116,7 @@ impl TtfbOutcome {
         port: u16,
         timings: TtfbTimings,
         protocol: HttpProtocol,
+        zero_rtt_status: Option<ZeroRttStatus>,
     ) -> Self {
         Self {
             user_input,
@@ -108,6 +125,7 @@ impl TtfbOutcome {
             timings,
             protocol,
             protocol_selection: ProtocolSelection::Only(protocol),
+            zero_rtt_status,
         }
     }
 
@@ -155,13 +173,28 @@ impl TtfbOutcome {
     }
 
     /// Returns the [`DurationPair`] for the transmission of the HTTP GET request.
+    ///
+    /// If the server accepted the request as TLS 1.3 early data, it was sent
+    /// during the TLS handshake. Its absolute time then lies before the end of
+    /// the handshake.
     #[must_use]
     pub fn http_get_send_duration(&self) -> DurationPair {
+        if self.zero_rtt_status == Some(ZeroRttStatus::Accepted) {
+            if let Some(zero_rtt) = self.zero_rtt_duration() {
+                return DurationPair {
+                    rel: self.timings.http_get_send,
+                    total: zero_rtt.total(),
+                };
+            }
+        }
         let abs_dur_so_far = self.tls_handshake_duration().unwrap_or_default().total();
         DurationPair::new(self.timings.http_get_send, abs_dur_so_far)
     }
 
     /// Returns the [`DurationPair`] for the time to first byte (TTFB) of the HTTP response.
+    ///
+    /// If the server accepted the request as TLS 1.3 early data, the TTFB starts
+    /// when the request was sent and includes the rest of the TLS handshake.
     #[must_use]
     pub fn ttfb_duration(&self) -> DurationPair {
         let abs_dur_so_far = self.http_get_send_duration().total();
@@ -192,11 +225,29 @@ impl TtfbOutcome {
         self.protocol_selection = selection;
         self
     }
+
+    /// Returns the time from TCP connection completion until the request was
+    /// sent as early data.
+    ///
+    /// This duration overlaps the TLS handshake and is therefore not part of the normal
+    /// sequential timing chain.
+    #[must_use]
+    pub fn zero_rtt_duration(&self) -> Option<DurationPair> {
+        self.timings
+            .zero_rtt
+            .map(|duration| DurationPair::new(duration, self.tcp_connect_duration().total()))
+    }
+
+    /// Returns the result of the TLS 1.3 early-data attempt.
+    #[must_use]
+    pub const fn zero_rtt_status(&self) -> Option<ZeroRttStatus> {
+        self.zero_rtt_status
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::outcome::{HttpProtocol, TtfbOutcome, TtfbTimings};
+    use crate::outcome::{HttpProtocol, TtfbOutcome, TtfbTimings, ZeroRttStatus};
     use std::net::{IpAddr, Ipv4Addr};
     use std::time::Duration;
 
@@ -213,8 +264,10 @@ mod tests {
                 http_get_send: Duration::from_millis(4),
                 http_ttfb: Duration::from_millis(5),
                 http_content_download: Duration::from_millis(6),
+                zero_rtt: None,
             },
             HttpProtocol::Http11,
+            None,
         );
         assert_eq!(
             outcome.dns_lookup_duration().unwrap().total().as_millis(),
@@ -250,6 +303,38 @@ mod tests {
             outcome.http_content_download_duration().total().as_millis(),
             1 + 2 + 3 + 4 + 5 + 6,
             "Total response completion time"
+        );
+    }
+
+    #[test]
+    fn accepted_zero_rtt_request_overlaps_tls_handshake() {
+        let outcome = TtfbOutcome::new(
+            "https://phip1611.de".to_string(),
+            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+            443,
+            TtfbTimings {
+                dns_lookup: Some(Duration::from_millis(1)),
+                tcp_connect: Duration::from_millis(2),
+                tls_handshake: Some(Duration::from_millis(30)),
+                http_get_send: Duration::from_millis(4),
+                http_ttfb: Duration::from_millis(5),
+                http_content_download: Duration::from_millis(6),
+                // The request was sent as early data 7 ms into the handshake.
+                zero_rtt: Some(Duration::from_millis(7)),
+            },
+            HttpProtocol::Http11,
+            // The server accepted the early data.
+            Some(ZeroRttStatus::Accepted),
+        );
+        assert_eq!(
+            outcome.http_get_send_duration().total().as_millis(),
+            1 + 2 + 7,
+            "DNS + TCP connect + early request; the TLS handshake overlaps"
+        );
+        assert_eq!(
+            outcome.ttfb_duration().total().as_millis(),
+            1 + 2 + 7 + 5,
+            "Total TTFB continues after the early request"
         );
     }
 }

@@ -344,8 +344,10 @@ pub fn measure(target: &Target, tls_config: Arc<ClientConfig>) -> Result<TtfbOut
             http_get_send: http_get_send_duration,
             http_ttfb: http_ttfb_duration,
             http_content_download: http_content_download_duration,
+            zero_rtt: None,
         },
         HttpProtocol::Http11,
+        None,
     ))
 }
 

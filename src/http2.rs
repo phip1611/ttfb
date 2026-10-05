@@ -152,8 +152,10 @@ pub async fn measure(
             http_get_send: send_duration,
             http_ttfb: ttfb_duration,
             http_content_download: download_duration,
+            zero_rtt: None,
         },
         HttpProtocol::Http2,
+        None,
     ))
 }
 
