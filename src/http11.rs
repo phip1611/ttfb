@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: MIT
 
-//! HTTP/1.1 request construction and response framing.
+//! HTTP/1.1 measurements over TCP or TLS, including the response framing.
 
-use crate::{CRATE_VERSION, IoReadAndWrite, TtfbError};
+use crate::target::Target;
+use crate::{CRATE_VERSION, TtfbError, TtfbOutcome, tls};
+use rustls::{ClientConfig, ClientConnection, StreamOwned};
+use std::io::{Read as IoRead, Write as IoWrite};
+use std::net::{IpAddr, TcpStream};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use url::Url;
 
 /// Size of a single socket read. Arbitrarily chosen.
@@ -16,6 +22,13 @@ const CONTENT_LENGTH: &str = "content-length";
 const TRANSFER_ENCODING: &str = "transfer-encoding";
 
 type Headers = Vec<(String, String)>;
+
+/// Trait that combines [`IoWrite`] and [`IoRead`].
+///
+/// This trait abstracts over a `Tcp<Data>` Stream or a `Tcp<Tls<Data>>` stream.
+trait IoReadAndWrite: IoWrite + IoRead {}
+
+impl<T: IoRead + IoWrite> IoReadAndWrite for T {}
 
 /// How the end of a response body was determined.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,7 +48,7 @@ pub enum Framing {
 /// Sets the following default headers:
 /// - `Accept-Encoding: gzip, deflate, br, zstd` (default of Chrome v123)
 /// - `User-Agent: ttfb/<version>`
-pub fn build_request(url: &Url) -> String {
+fn build_request(url: &Url) -> String {
     let path = &url[url::Position::BeforePath..url::Position::AfterQuery];
     let host = &url[url::Position::BeforeHost..url::Position::AfterPort];
     format!(
@@ -52,7 +65,7 @@ pub fn build_request(url: &Url) -> String {
 /// Reads one complete HTTP/1.1 response after its first byte has already arrived.
 ///
 /// Returns how the end of the body was determined.
-pub fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<Framing, TtfbError> {
+fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<Framing, TtfbError> {
     let mut response = vec![first_byte];
     let (head_len, status, headers) = loop {
         let (head_len, status, headers) = read_head(tcp, &mut response)?;
@@ -248,6 +261,90 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
+/// Initializes the TCP connection to the IP address. Measures the duration.
+fn tcp_connect(addr: IpAddr, port: u16) -> Result<(TcpStream, Duration), TtfbError> {
+    let addr_w_port = (addr, port);
+    let now = Instant::now();
+    let mut tcp = TcpStream::connect(addr_w_port).map_err(TtfbError::CantConnectTcp)?;
+    tcp.flush().map_err(TtfbError::OtherStreamError)?;
+    let tcp_connect_duration = now.elapsed();
+    Ok((tcp, tcp_connect_duration))
+}
+
+/// If the scheme is "https", this replaces the TCP-Stream with a `TLS<TCP>`-stream.
+/// If TLS is used, it measures the time of the TLS handshake.
+fn tls_handshake_if_necessary(
+    mut tcp: TcpStream,
+    url: &Url,
+    tls_config: Arc<ClientConfig>,
+) -> Result<(Box<dyn IoReadAndWrite>, Option<Duration>), TtfbError> {
+    if url.scheme() == "https" {
+        let server_name = tls::server_name(url)?;
+        let now = Instant::now();
+        let mut connection = ClientConnection::new(tls_config, server_name)
+            .map_err(|error| TtfbError::Tls(error.to_string()))?;
+        // Performs IO until the handshake is complete.
+        connection
+            .complete_io(&mut tcp)
+            .map_err(|error| TtfbError::Tls(error.to_string()))?;
+        let tls_handshake_duration = now.elapsed();
+        Ok((
+            Box::new(StreamOwned::new(connection, tcp)),
+            Some(tls_handshake_duration),
+        ))
+    } else {
+        Ok((Box::new(tcp), None))
+    }
+}
+
+/// Measures one GET request via HTTP/1.1: TCP connect, the TLS handshake for
+/// HTTPS, sending the request, the first response byte, and the download of
+/// the complete response.
+pub fn measure(target: &Target, tls_config: Arc<ClientConfig>) -> Result<TtfbOutcome, TtfbError> {
+    // Connect, with a TLS handshake for HTTPS.
+    let (tcp, tcp_connect_duration) = tcp_connect(target.address, target.port)?;
+    let (mut tcp, tls_handshake_duration) =
+        tls_handshake_if_necessary(tcp, &target.url, tls_config)?;
+
+    // Send the request.
+    let http_get_send_duration = {
+        let header = build_request(&target.url);
+        let now = Instant::now();
+        tcp.write_all(header.as_bytes())
+            .map_err(TtfbError::CantConnectHttp)?;
+        tcp.flush().map_err(TtfbError::OtherStreamError)?;
+        now.elapsed()
+    };
+
+    // Wait for the first byte of the response.
+    let mut first_byte = [0_u8];
+    let http_ttfb_duration = {
+        let now = Instant::now();
+        tcp.read_exact(&mut first_byte)
+            .map_err(|_e| TtfbError::NoHttpResponse)?;
+        now.elapsed()
+    };
+
+    // Read the rest of the response.
+    let http_content_download_duration = {
+        let now = Instant::now();
+        read_response(tcp.as_mut(), first_byte[0])?;
+        now.elapsed()
+    };
+
+    Ok(TtfbOutcome::new(
+        target.input.clone(),
+        target.address,
+        target.port,
+        target.dns_duration,
+        tcp_connect_duration,
+        tls_handshake_duration,
+        http_get_send_duration,
+        http_ttfb_duration,
+        http_content_download_duration,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -334,16 +431,14 @@ mod tests {
 #[cfg(all(test, network_tests))]
 mod network_tests {
     use super::*;
-    use crate::{resolve_dns_if_necessary, tcp_connect, tls_handshake_if_necessary};
 
     /// Requests `url` and returns how the response body was framed.
     fn framing_of(url: &str) -> Result<Framing, TtfbError> {
-        let url = Url::parse(url).unwrap();
-        let (address, _) = resolve_dns_if_necessary(&url)?;
-        let (tcp, _) = tcp_connect(address, url.port_or_known_default().unwrap())?;
-        let (mut stream, _) = tls_handshake_if_necessary(tcp, &url, false)?;
+        let target = Target::resolve(url)?;
+        let (tcp, _) = tcp_connect(target.address, target.port)?;
+        let (mut stream, _) = tls_handshake_if_necessary(tcp, &target.url, tls::config(false))?;
         stream
-            .write_all(build_request(&url).as_bytes())
+            .write_all(build_request(&target.url).as_bytes())
             .map_err(TtfbError::CantConnectHttp)?;
         let mut first_byte = [0];
         stream

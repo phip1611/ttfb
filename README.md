@@ -10,7 +10,7 @@ crate helps you find the timings for:
 - TTFB (Time To First Byte)
 
 It builds upon the crates [trust-dns-resolver](crates.io/crate/trust-dns-resolver) for modern and secure
-DNS resolving of domains and [native-tls](crates.io/crate/native-tls) for handling TLS v1.2/1.3.
+DNS resolving of domains and [rustls](crates.io/crate/rustls) for handling TLS v1.2/1.3.
 
 ## Cross Platform
 CLI + lib work on Linux, MacOS, and Windows.
