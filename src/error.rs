@@ -87,6 +87,9 @@ pub enum TtfbError {
     /// An HTTP/2 exchange failed.
     #[error("HTTP/2 failed: {0}")]
     Http2(String),
+    /// An HTTP/3 exchange failed.
+    #[error("HTTP/3 failed: {0}")]
+    Http3(String),
     /// There was a problem with the TCP stream.
     #[error("There was a problem with the TCP stream because: {0}")]
     OtherStreamError(#[source] io::Error),
@@ -103,7 +106,8 @@ impl PartialEq for TtfbError {
             (Self::CantConnectTcp(e1), Self::CantConnectTcp(e2)) => e1.kind().eq(&e2.kind()),
             (Self::Tls(e1), Self::Tls(e2))
             | (Self::UnsupportedHttpProtocol(e1), Self::UnsupportedHttpProtocol(e2))
-            | (Self::Http2(e1), Self::Http2(e2)) => e1.eq(e2),
+            | (Self::Http2(e1), Self::Http2(e2))
+            | (Self::Http3(e1), Self::Http3(e2)) => e1.eq(e2),
             (Self::CantConnectHttp(e1), Self::OtherStreamError(e2)) => e1.kind().eq(&e2.kind()),
             (Self::CantConfigureDNSError(_e1), Self::CantConfigureDNSError(_e2)) => {
                 // nah, ignore it. Proper deep check is too complex.

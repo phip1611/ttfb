@@ -2,10 +2,14 @@
 
 //! Module for [`TtfbClient`].
 
+#[cfg(feature = "http2")]
+use crate::http2;
+#[cfg(feature = "http3")]
+use crate::http3;
+#[cfg(any(feature = "http2", feature = "http3"))]
+use crate::run_in_tokio;
 use crate::target::Target;
 use crate::{HttpProtocol, TtfbError, TtfbOutcome, http11, tls};
-#[cfg(feature = "http2")]
-use crate::{http2, run_in_tokio};
 use rustls::ClientConfig;
 use std::sync::Arc;
 
@@ -66,6 +70,21 @@ impl TtfbClient {
         ))
     }
 
+    /// Measures `target` via HTTP/3. The asynchronous exchange runs on a
+    /// dedicated Tokio runtime.
+    #[cfg(feature = "http3")]
+    fn measure_http3(&self, target: &Target) -> Result<TtfbOutcome, TtfbError> {
+        run_in_tokio(http3::measure(target, Arc::clone(&self.tls_config)))
+    }
+
+    /// Fails, as the crate was built without the `http3` feature.
+    #[cfg(not(feature = "http3"))]
+    fn measure_http3(&self, _target: &Target) -> Result<TtfbOutcome, TtfbError> {
+        Err(TtfbError::UnsupportedHttpProtocol(
+            "ttfb was built without the http3 feature".into(),
+        ))
+    }
+
     /// Measures one GET request to `input`.
     ///
     /// `input` is a URL pointing to an HTTP server, such as:
@@ -85,6 +104,7 @@ impl TtfbClient {
                 http11::measure(&target, Arc::clone(&self.tls_config))
             }
             ProtocolSelection::Only(HttpProtocol::Http2) => self.measure_http2(&target),
+            ProtocolSelection::Only(HttpProtocol::Http3) => self.measure_http3(&target),
         }?;
         Ok(outcome.with_protocol_selection(self.options.protocol))
     }

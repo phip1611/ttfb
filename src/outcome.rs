@@ -15,6 +15,8 @@ pub enum HttpProtocol {
     Http11,
     /// HTTP/2.
     Http2,
+    /// HTTP/3.
+    Http3,
 }
 
 impl Display for HttpProtocol {
@@ -22,6 +24,7 @@ impl Display for HttpProtocol {
         let name = match self {
             Self::Http11 => "HTTP/1.1",
             Self::Http2 => "HTTP/2",
+            Self::Http3 => "HTTP/3",
         };
         f.write_str(name)
     }
@@ -68,6 +71,9 @@ pub enum ConnectionHandshake {
         /// The TLS handshake, if TLS is used.
         tls: Option<DurationPair>,
     },
+    /// A QUIC connection, as used by HTTP/3. The QUIC handshake includes the
+    /// TLS handshake.
+    Quic(DurationPair),
 }
 
 impl ConnectionHandshake {
@@ -75,6 +81,7 @@ impl ConnectionHandshake {
     fn total(self) -> Duration {
         match self {
             Self::Tcp { connect, tls } => tls.unwrap_or(connect).total(),
+            Self::Quic(handshake) => handshake.total(),
         }
     }
 }
@@ -92,6 +99,9 @@ pub(crate) enum Connect {
         /// The TLS handshake, if TLS is used.
         tls: Option<Duration>,
     },
+    /// A QUIC connection, whose handshake includes the TLS handshake.
+    #[cfg(feature = "http3")]
+    Quic(Duration),
 }
 
 /// The relative durations of the measurement steps, i.e., how long each step
@@ -185,6 +195,10 @@ impl TtfbOutcome {
                     tls: tls.map(|tls| DurationPair::new(tls, connect.total())),
                 }
             }
+            #[cfg(feature = "http3")]
+            Connect::Quic(handshake) => {
+                ConnectionHandshake::Quic(DurationPair::new(handshake, dns_end))
+            }
         }
     }
 
@@ -257,7 +271,9 @@ mod tests {
             1,
             "DNS is the very first operation"
         );
-        let ConnectionHandshake::Tcp { connect, tls } = outcome.connection_handshake();
+        let ConnectionHandshake::Tcp { connect, tls } = outcome.connection_handshake() else {
+            panic!("expected a TCP connection");
+        };
         assert_eq!(connect.total().as_millis(), 1 + 2, "DNS + TCP connect");
         assert_eq!(
             tls.unwrap().total().as_millis(),
@@ -278,6 +294,33 @@ mod tests {
             outcome.http_content_download_duration().total().as_millis(),
             1 + 2 + 3 + 4 + 5 + 6,
             "Total response completion time"
+        );
+    }
+
+    #[cfg(feature = "http3")]
+    #[test]
+    fn quic_handshake_replaces_tcp_and_tls() {
+        let outcome = TtfbOutcome::new(
+            "https://phip1611.de".to_string(),
+            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+            443,
+            TtfbTimings {
+                dns_lookup: Some(Duration::from_millis(1)),
+                connect: Connect::Quic(Duration::from_millis(2)),
+                http_get_send: Duration::from_millis(4),
+                http_ttfb: Duration::from_millis(5),
+                http_content_download: Duration::from_millis(6),
+            },
+            HttpProtocol::Http3,
+        );
+        let ConnectionHandshake::Quic(handshake) = outcome.connection_handshake() else {
+            panic!("expected a QUIC connection");
+        };
+        assert_eq!(handshake.total().as_millis(), 1 + 2, "DNS + QUIC handshake");
+        assert_eq!(
+            outcome.http_get_send_duration().total().as_millis(),
+            1 + 2 + 4,
+            "DNS + QUIC handshake + HTTP GET send"
         );
     }
 }
