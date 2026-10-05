@@ -4,8 +4,7 @@
 
 use crate::outcome::{Connect, TtfbTimings};
 use crate::target::Target;
-use crate::{CRATE_VERSION, HttpProtocol, TtfbError, TtfbOutcome, tls};
-use http::header::{ACCEPT, ACCEPT_ENCODING, USER_AGENT};
+use crate::{HttpProtocol, TtfbError, TtfbOutcome, build_http_request, tls};
 use rustls::ClientConfig;
 use std::sync::Arc;
 use std::time::Instant;
@@ -46,17 +45,6 @@ async fn connect_tls(
         ));
     }
     Ok(tls)
-}
-
-/// Builds the GET request. h2 derives the `:scheme`, `:authority`, and `:path`
-/// pseudo-header fields from the absolute URI, which excludes the fragment.
-fn build_request(url: &Url) -> Result<http::Request<()>, TtfbError> {
-    http::Request::get(&url[..url::Position::AfterQuery])
-        .header(USER_AGENT, format!("ttfb/{CRATE_VERSION}"))
-        .header(ACCEPT, "*/*")
-        .header(ACCEPT_ENCODING, "gzip, deflate, br, zstd")
-        .body(())
-        .map_err(|error| TtfbError::Http2(error.to_string()))
 }
 
 /// Reads the complete response body.
@@ -110,7 +98,7 @@ pub async fn measure(
 
     // Send the request after the HTTP/2 connection preface.
     let (response, send_duration) = {
-        let request = build_request(&target.url)?;
+        let request = build_http_request(&target.url)?;
         let begin = Instant::now();
         let (mut sender, connection) = h2::client::Builder::new()
             .initial_window_size(STREAM_WINDOW_SIZE)

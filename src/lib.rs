@@ -29,6 +29,11 @@ pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
 pub use outcome::{ConnectionHandshake, DurationPair, HttpProtocol, TtfbOutcome};
 
 use std::{panic, thread};
+#[cfg(feature = "http2")]
+use {
+    http::header::{ACCEPT, ACCEPT_ENCODING, USER_AGENT},
+    url::Url,
+};
 
 mod client;
 mod error;
@@ -67,4 +72,17 @@ where
             .join()
             .unwrap_or_else(|panic| panic::resume_unwind(panic))
     })
+}
+
+/// Builds the GET request for HTTP/2. h2 derives the `:scheme`,
+/// `:authority`, and `:path` pseudo-header fields from the absolute URI, which
+/// excludes the fragment.
+#[cfg(feature = "http2")]
+fn build_http_request(url: &Url) -> Result<http::Request<()>, TtfbError> {
+    http::Request::get(&url[..url::Position::AfterQuery])
+        .header(USER_AGENT, format!("ttfb/{CRATE_VERSION}"))
+        .header(ACCEPT, "*/*")
+        .header(ACCEPT_ENCODING, "gzip, deflate, br, zstd")
+        .body(())
+        .map_err(|error| TtfbError::InvalidUrl(InvalidUrlError::WrongFormat(error.to_string())))
 }
