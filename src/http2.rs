@@ -2,6 +2,7 @@
 
 //! HTTP/2 measurements over TLS.
 
+use crate::outcome::{Connect, TtfbTimings};
 use crate::target::Target;
 use crate::{CRATE_VERSION, HttpProtocol, TtfbError, TtfbOutcome, tls};
 use http::header::{ACCEPT, ACCEPT_ENCODING, USER_AGENT};
@@ -144,12 +145,16 @@ pub async fn measure(
         target.input.clone(),
         target.address,
         target.port,
-        target.dns_duration,
-        tcp_duration,
-        Some(tls_duration),
-        send_duration,
-        ttfb_duration,
-        download_duration,
+        TtfbTimings {
+            dns_lookup: target.dns_duration,
+            connect: Connect::Tcp {
+                connect: tcp_duration,
+                tls: Some(tls_duration),
+            },
+            http_get_send: send_duration,
+            http_ttfb: ttfb_duration,
+            http_content_download: download_duration,
+        },
         HttpProtocol::Http2,
     ))
 }

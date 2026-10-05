@@ -94,6 +94,14 @@ impl TtfbClient {
 #[cfg(all(test, network_tests))]
 mod network_tests {
     use super::*;
+    use crate::ConnectionHandshake;
+
+    fn has_tls_handshake(outcome: &TtfbOutcome) -> bool {
+        matches!(
+            outcome.connection_handshake(),
+            ConnectionHandshake::Tcp { tls: Some(_), .. }
+        )
+    }
 
     fn measure_http11(
         input: &str,
@@ -115,7 +123,7 @@ mod network_tests {
     #[test]
     fn test_http_no_tls_handshake() {
         let r = measure_http11("http://phip1611.de", false).unwrap();
-        assert!(r.tls_handshake_duration().is_none());
+        assert!(!has_tls_handshake(&r));
     }
 
     #[test]
@@ -127,7 +135,7 @@ mod network_tests {
     #[test]
     fn test_https_tls_handshake_duration() {
         let r = measure_http11("https://phip1611.de", false).unwrap();
-        assert!(r.tls_handshake_duration().is_some());
+        assert!(has_tls_handshake(&r));
     }
 
     #[test]
@@ -164,16 +172,13 @@ mod network_tests {
     fn test_https_wrong_host_certificate_ignore_error() {
         let r = measure_http11("https://wrong.host.badssl.com", true).unwrap();
         assert!(r.dns_lookup_duration().is_some());
-        assert!(r.tls_handshake_duration().is_some());
+        assert!(has_tls_handshake(&r));
     }
 
     #[test]
     fn test_https_ip_address_tls_handshake() {
         let r = measure_http11("https://1.1.1.1", false).unwrap();
-        assert!(
-            r.tls_handshake_duration().is_some(),
-            "must execute TLS handshake"
-        );
+        assert!(has_tls_handshake(&r), "must execute TLS handshake");
     }
 
     #[cfg(feature = "http2")]
@@ -190,7 +195,7 @@ mod network_tests {
         ] {
             let outcome = client.measure(url).unwrap();
             assert_eq!(outcome.protocol(), HttpProtocol::Http2, "{url}");
-            assert!(outcome.tls_handshake_duration().is_some(), "{url}");
+            assert!(has_tls_handshake(&outcome), "{url}");
         }
     }
 }

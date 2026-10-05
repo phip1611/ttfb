@@ -19,6 +19,11 @@ only change something for the binary.
   The lib no longer depends on `rustls-connector`.
 - **BREAKING** `AllowInvalidCertsVerifier` is no longer public. It was
   exported by accident.
+- **BREAKING** `TtfbOutcome::tcp_connect_duration()` and
+  `TtfbOutcome::tls_handshake_duration()` are replaced by
+  `TtfbOutcome::connection_handshake()`. It reports how the connection was
+  established as the new `ConnectionHandshake`, e.g., a TCP connect with an
+  optional TLS handshake.
 - **BREAKING** `TtfbError` has the new variants `UnsupportedHttpProtocol` and
   `Http2`.
 - TLS trusts the system's root certificates and the bundled Mozilla root

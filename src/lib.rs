@@ -18,13 +18,15 @@
 )]
 // I can't do anything about this; fault of the dependencies
 #![allow(clippy::multiple_crate_versions)]
+// Crate-internal items are marked as such, also in private modules.
+#![allow(clippy::redundant_pub_crate)]
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
 #![deny(rustdoc::all)]
 
 pub use client::{ProtocolSelection, TtfbClient, TtfbOptions};
 pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
-pub use outcome::{DurationPair, HttpProtocol, TtfbOutcome};
+pub use outcome::{ConnectionHandshake, DurationPair, HttpProtocol, TtfbOutcome};
 
 use std::{panic, thread};
 
