@@ -57,6 +57,7 @@ pub enum InvalidUrlError {
 
 /// Errors of the public interface of this crate.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum TtfbError {
     /// Invalid URL
     #[error("Invalid URL: {0}")]
