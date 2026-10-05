@@ -256,4 +256,38 @@ mod network_tests {
             );
         }
     }
+
+    /// The automatic selection measures the best protocol a website supports.
+    /// Websites may change what they support, so a failure can also mean that
+    /// this list needs an update.
+    #[cfg(all(feature = "http2", feature = "http3"))]
+    #[test]
+    fn auto_selects_the_best_supported_protocol() {
+        let client = TtfbClient::new(TtfbOptions::default());
+        for (url, expected) in [
+            ("https://www.cloudflare.com", HttpProtocol::Http3),
+            ("https://github.com", HttpProtocol::Http2),
+            ("https://badssl.com", HttpProtocol::Http11),
+        ] {
+            let outcome = client
+                .measure(url)
+                .unwrap_or_else(|error| panic!("{url}: {error}"));
+            assert_eq!(outcome.protocol(), expected, "{url}");
+            assert_eq!(
+                outcome.protocol_selection(),
+                ProtocolSelection::Auto,
+                "{url}"
+            );
+        }
+    }
+
+    /// Another protocol would fail with the same certificate, so the automatic
+    /// selection must report the error instead of falling back.
+    #[test]
+    fn auto_does_not_fall_back_on_certificate_errors() {
+        let error = TtfbClient::new(TtfbOptions::default())
+            .measure("https://expired.badssl.com")
+            .unwrap_err();
+        assert!(matches!(error, TtfbError::Tls(_)), "{error}");
+    }
 }
