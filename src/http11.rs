@@ -3,7 +3,7 @@
 //! HTTP/1.1 measurements over TCP or TLS, including the response framing.
 
 use crate::deadline::Deadline;
-use crate::outcome::{Connect, TtfbTimings};
+use crate::outcome::{Connect, ResponseHead, TtfbTimings};
 use crate::target::Target;
 use crate::{CRATE_VERSION, HttpProtocol, TtfbError, TtfbOutcome, tls};
 use http::header::{CONTENT_LENGTH, TRANSFER_ENCODING};
@@ -99,8 +99,12 @@ fn build_request(url: &Url) -> String {
 
 /// Reads one complete HTTP/1.1 response after its first byte has already arrived.
 ///
-/// Returns how the end of the body was determined.
-fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<Framing, TtfbError> {
+/// Returns the head of the final response and how the end of its body was
+/// determined.
+fn read_response(
+    tcp: &mut dyn IoReadAndWrite,
+    first_byte: u8,
+) -> Result<(ResponseHead, Framing), TtfbError> {
     let mut response = vec![first_byte];
     let (head_len, status, headers) = loop {
         let (head_len, status, headers) = read_head(tcp, &mut response)?;
@@ -113,7 +117,20 @@ fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<Framing
         }
     };
     let body = response.split_off(head_len);
+    let framing = read_body(tcp, status, &headers, body)?;
+    Ok((ResponseHead { status, headers }, framing))
+}
 
+/// Reads the body of a response with `status` and `headers`. `body` holds the
+/// body bytes that arrived together with the head.
+///
+/// Returns how the end of the body was determined.
+fn read_body(
+    tcp: &mut dyn IoReadAndWrite,
+    status: StatusCode,
+    headers: &HeaderMap,
+    body: Vec<u8>,
+) -> Result<Framing, TtfbError> {
     // Responses with these status codes never have a body.
     if status.is_informational()
         || status == StatusCode::NO_CONTENT
@@ -140,7 +157,7 @@ fn read_response(tcp: &mut dyn IoReadAndWrite, first_byte: u8) -> Result<Framing
     }
 
     // A fixed-length body ends after Content-Length bytes.
-    if let Some(content_length) = content_length(&headers)? {
+    if let Some(content_length) = content_length(headers)? {
         if body.len() > content_length {
             return Err(TtfbError::InvalidHttpResponse(
                 "response contains more bytes than Content-Length".into(),
@@ -383,10 +400,10 @@ pub fn measure(
     };
 
     // Read the rest of the response.
-    let http_content_download_duration = {
+    let (response, http_content_download_duration) = {
         let now = Instant::now();
-        read_response(tcp.as_mut(), first_byte[0])?;
-        now.elapsed()
+        let (response, _) = read_response(tcp.as_mut(), first_byte[0])?;
+        (response, now.elapsed())
     };
 
     Ok(TtfbOutcome::new(
@@ -404,6 +421,7 @@ pub fn measure(
             http_content_download: http_content_download_duration,
         },
         HttpProtocol::Http11,
+        response,
     ))
 }
 
@@ -414,7 +432,7 @@ mod tests {
 
     fn parse_response(response: &[u8]) -> Result<Framing, TtfbError> {
         let mut stream = Cursor::new(response[1..].to_vec());
-        read_response(&mut stream, response[0])
+        read_response(&mut stream, response[0]).map(|(_, framing)| framing)
     }
 
     #[test]
@@ -464,6 +482,16 @@ mod tests {
         );
     }
 
+    #[test]
+    fn returns_head_of_final_response() {
+        let response = b"HTTP/1.1 103 Early Hints\r\nLink: </style.css>\r\n\r\nHTTP/1.1 404 Not Found\r\nServer: test\r\nContent-Length: 0\r\n\r\n";
+        let mut stream = Cursor::new(response[1..].to_vec());
+        let (head, _) = read_response(&mut stream, response[0]).unwrap();
+        assert_eq!(head.status, StatusCode::NOT_FOUND);
+        assert_eq!(head.headers.get("server").unwrap(), "test");
+        assert!(head.headers.get("link").is_none());
+    }
+
     /// Differing Content-Length values make the body length ambiguous. They come
     /// from broken servers or proxies, or indicate a response smuggling attempt,
     /// so RFC 9112 requires treating the response as invalid.
@@ -507,7 +535,7 @@ mod network_tests {
         stream
             .read_exact(&mut first_byte)
             .map_err(|_| TtfbError::NoHttpResponse)?;
-        read_response(stream.as_mut(), first_byte[0])
+        read_response(stream.as_mut(), first_byte[0]).map(|(_, framing)| framing)
     }
 
     #[test]

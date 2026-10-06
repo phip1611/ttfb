@@ -2,7 +2,7 @@
 
 //! HTTP/2 measurements over TLS.
 
-use crate::outcome::{Connect, TtfbTimings};
+use crate::outcome::{Connect, ResponseHead, TtfbTimings};
 use crate::target::Target;
 use crate::{HttpProtocol, TtfbError, TtfbOutcome, build_http_request, tls};
 use h2::client::Builder;
@@ -126,10 +126,12 @@ pub async fn measure(
         (response, begin.elapsed())
     };
 
+    let (head, body) = response.into_parts();
+
     // Download the body.
     let download_duration = {
         let begin = Instant::now();
-        download_body(response.into_body()).await?;
+        download_body(body).await?;
         begin.elapsed()
     };
 
@@ -148,6 +150,10 @@ pub async fn measure(
             http_content_download: download_duration,
         },
         HttpProtocol::Http2,
+        ResponseHead {
+            status: head.status,
+            headers: head.headers,
+        },
     ))
 }
 

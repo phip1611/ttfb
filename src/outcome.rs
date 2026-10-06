@@ -3,7 +3,9 @@
 //! Module for [`TtfbOutcome`].
 
 use crate::ProtocolSelection;
+use http::{HeaderMap, StatusCode};
 use std::fmt::{self, Display, Formatter};
+use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use std::time::Duration;
 
@@ -120,8 +122,15 @@ pub(crate) struct TtfbTimings {
     pub http_content_download: Duration,
 }
 
+/// The status code and the headers of the final response.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ResponseHead {
+    pub status: StatusCode,
+    pub headers: HeaderMap,
+}
+
 /// The final result of this library. It contains all the measured timings.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TtfbOutcome {
     /// Copy of the user input.
     user_input: String,
@@ -135,6 +144,22 @@ pub struct TtfbOutcome {
     protocol: HttpProtocol,
     /// How the protocol was selected.
     protocol_selection: ProtocolSelection,
+    /// The head of the final response.
+    response: ResponseHead,
+}
+
+// HeaderMap doesn't implement Hash. Leaving the headers out is valid, as
+// equal outcomes still have equal hashes.
+impl Hash for TtfbOutcome {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.user_input.hash(state);
+        self.ip_addr.hash(state);
+        self.port.hash(state);
+        self.timings.hash(state);
+        self.protocol.hash(state);
+        self.protocol_selection.hash(state);
+        self.response.status.hash(state);
+    }
 }
 
 impl TtfbOutcome {
@@ -144,6 +169,7 @@ impl TtfbOutcome {
         port: u16,
         timings: TtfbTimings,
         protocol: HttpProtocol,
+        response: ResponseHead,
     ) -> Self {
         Self {
             user_input,
@@ -152,6 +178,7 @@ impl TtfbOutcome {
             timings,
             protocol,
             protocol_selection: ProtocolSelection::Only(protocol),
+            response,
         }
     }
 
@@ -229,6 +256,20 @@ impl TtfbOutcome {
         self.protocol
     }
 
+    /// Returns the status code of the final response. Interim responses, such
+    /// as 100 Continue, are skipped.
+    #[must_use]
+    pub const fn status(&self) -> StatusCode {
+        self.response.status
+    }
+
+    /// Returns the headers of the final response. Header names are in
+    /// lowercase.
+    #[must_use]
+    pub const fn headers(&self) -> &HeaderMap {
+        &self.response.headers
+    }
+
     /// Returns how the protocol was selected: automatically or explicitly.
     #[must_use]
     pub const fn protocol_selection(&self) -> ProtocolSelection {
@@ -244,7 +285,10 @@ impl TtfbOutcome {
 
 #[cfg(test)]
 mod tests {
-    use crate::outcome::{Connect, ConnectionHandshake, HttpProtocol, TtfbOutcome, TtfbTimings};
+    use crate::outcome::{
+        Connect, ConnectionHandshake, HttpProtocol, ResponseHead, TtfbOutcome, TtfbTimings,
+    };
+    use http::{HeaderMap, StatusCode};
     use std::net::{IpAddr, Ipv4Addr};
     use std::time::Duration;
 
@@ -265,6 +309,10 @@ mod tests {
                 http_content_download: Duration::from_millis(6),
             },
             HttpProtocol::Http11,
+            ResponseHead {
+                status: StatusCode::OK,
+                headers: HeaderMap::new(),
+            },
         );
         assert_eq!(
             outcome.dns_lookup_duration().unwrap().total().as_millis(),
@@ -312,6 +360,10 @@ mod tests {
                 http_content_download: Duration::from_millis(6),
             },
             HttpProtocol::Http3,
+            ResponseHead {
+                status: StatusCode::OK,
+                headers: HeaderMap::new(),
+            },
         );
         let ConnectionHandshake::Quic(handshake) = outcome.connection_handshake() else {
             panic!("expected a QUIC connection");

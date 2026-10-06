@@ -44,6 +44,9 @@ only change something for the binary.
   lookup to the end of the download. It defaults to 10 s and must be between
   1 s and 60 min. A measurement that exceeds it fails with the new
   `TtfbError::Timeout`.
+- `TtfbOutcome::status()` and `TtfbOutcome::headers()` return the status code
+  and the headers of the final response. The types `StatusCode` and
+  `HeaderMap` of the `http` crate are re-exported.
 
 ## ttfb binary
 
@@ -58,7 +61,10 @@ only change something for the binary.
   step and of the total time.
 - Added `--timeout <SECS>`, the maximum duration of a measurement, which
   defaults to 10 s and must be between 1 s and 3600 s.
-- The output shows the HTTP protocol and the download of the response.
+- Added `--headers`, which prints the status line and the headers of the
+  response.
+- The output shows the HTTP protocol, the status, and the download of the
+  response.
 - The output labels "TCP connect" and "HTTP GET Req" are now "TCP Connect"
   and "HTTP Send GET".
 - The output shows the QUIC handshake of HTTP/3 measurements instead of the

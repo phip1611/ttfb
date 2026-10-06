@@ -2,7 +2,7 @@
 
 //! HTTP/3 measurements over QUIC.
 
-use crate::outcome::{Connect, TtfbTimings};
+use crate::outcome::{Connect, ResponseHead, TtfbTimings};
 use crate::target::Target;
 use crate::{HttpProtocol, TtfbError, TtfbOutcome, build_http_request, tls};
 use bytes::Bytes;
@@ -108,10 +108,10 @@ pub async fn measure(
     };
 
     // Wait for the response headers.
-    let ttfb_duration = {
+    let (head, ttfb_duration) = {
         let begin = Instant::now();
-        stream.recv_response().await.map_err(http3_error)?;
-        begin.elapsed()
+        let response = stream.recv_response().await.map_err(http3_error)?;
+        (response.into_parts().0, begin.elapsed())
     };
 
     // Download the body.
@@ -133,6 +133,10 @@ pub async fn measure(
             http_content_download: download_duration,
         },
         HttpProtocol::Http3,
+        ResponseHead {
+            status: head.status,
+            headers: head.headers,
+        },
     ))
 }
 

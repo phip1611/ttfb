@@ -159,7 +159,7 @@ impl Target {
     }
 }
 
-#[cfg(all(test, not(network_tests)))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

@@ -343,6 +343,13 @@ mod network_tests {
     }
 
     #[test]
+    fn test_https_status_and_headers() {
+        let r = measure_http11("https://phip1611.de", false).unwrap();
+        assert!(r.status().is_success());
+        assert!(r.headers().contains_key("content-type"));
+    }
+
+    #[test]
     fn test_https_ip_address_tls_handshake() {
         let r = measure_http11("https://1.1.1.1", false).unwrap();
         assert!(has_tls_handshake(&r), "must execute TLS handshake");
@@ -362,6 +369,8 @@ mod network_tests {
         ] {
             let outcome = client.measure(url).unwrap();
             assert_eq!(outcome.protocol(), HttpProtocol::Http2, "{url}");
+            assert!(outcome.status().is_success(), "{url}");
+            assert!(outcome.headers().contains_key("content-type"), "{url}");
             assert!(has_tls_handshake(&outcome), "{url}");
         }
     }
@@ -376,6 +385,8 @@ mod network_tests {
         for url in ["https://www.google.com", "https://www.cloudflare.com"] {
             let outcome = client.measure(url).unwrap();
             assert_eq!(outcome.protocol(), HttpProtocol::Http3, "{url}");
+            assert!(outcome.status().is_success(), "{url}");
+            assert!(outcome.headers().contains_key("content-type"), "{url}");
             assert!(
                 matches!(outcome.connection_handshake(), ConnectionHandshake::Quic(_)),
                 "{url}"
