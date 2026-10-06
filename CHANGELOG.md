@@ -42,7 +42,8 @@ only change something for the binary.
   without their Cargo feature are skipped.
 - `TtfbOptions::timeout` limits the duration of a measurement, from the DNS
   lookup to the end of the download. It defaults to 10 s and must be between
-  1 s and 60 min.
+  1 s and 60 min. A measurement that exceeds it fails with the new
+  `TtfbError::Timeout`.
 
 ## ttfb binary
 

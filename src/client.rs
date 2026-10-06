@@ -2,6 +2,7 @@
 
 //! Module for [`TtfbClient`].
 
+use crate::deadline::Deadline;
 #[cfg(feature = "http2")]
 use crate::http2;
 #[cfg(feature = "http3")]
@@ -153,7 +154,8 @@ impl TtfbClient {
     /// - `12.34.56.78` (defaults to `http://`)
     pub fn measure(&self, input: impl AsRef<str>) -> Result<TtfbOutcome, TtfbError> {
         self.validate()?;
-        let target = Target::resolve(input.as_ref())?;
+        let deadline = Deadline::after(self.options.timeout);
+        let target = Target::resolve(input.as_ref(), deadline)?;
         let outcome = match self.options.protocol {
             ProtocolSelection::Auto => self.measure_auto(&target),
             ProtocolSelection::Only(HttpProtocol::Http11) => self.measure_http11(&target),

@@ -94,6 +94,11 @@ pub enum TtfbError {
     /// There was a problem with the TCP stream.
     #[error("There was a problem with the TCP stream because: {0}")]
     OtherStreamError(#[source] io::Error),
+    /// The measurement didn't complete within [`TtfbOptions::timeout`].
+    ///
+    /// [`TtfbOptions::timeout`]: crate::TtfbOptions::timeout
+    #[error("The measurement didn't complete within the timeout of {0:?}")]
+    Timeout(Duration),
     /// [`TtfbOptions::timeout`] is out of range.
     ///
     /// [`TtfbOptions::timeout`]: crate::TtfbOptions::timeout
@@ -126,7 +131,8 @@ impl PartialEq for TtfbError {
             }
             (Self::NoHttpResponse, Self::NoHttpResponse) => true,
             (Self::InvalidHttpResponse(e1), Self::InvalidHttpResponse(e2)) => e1.eq(e2),
-            (Self::InvalidTimeout(t1), Self::InvalidTimeout(t2)) => t1.eq(t2),
+            (Self::Timeout(t1), Self::Timeout(t2))
+            | (Self::InvalidTimeout(t1), Self::InvalidTimeout(t2)) => t1.eq(t2),
             _ => false,
         }
     }

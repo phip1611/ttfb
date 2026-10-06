@@ -57,6 +57,7 @@ use {
 };
 
 mod client;
+mod deadline;
 mod error;
 mod http11;
 #[cfg(feature = "http2")]
