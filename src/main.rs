@@ -24,14 +24,27 @@
 use clap::Parser;
 use crossterm::ExecutableCommand;
 use crossterm::style::{Attribute, SetAttribute};
+use std::fmt::{self, Display, Formatter};
 use std::io::stdout;
+use std::num::{NonZeroU64, NonZeroUsize};
 use std::process::exit;
+use std::str::FromStr;
+use std::time::{Duration, Instant};
 use ttfb::{
     ConnectionHandshake, HttpProtocol, ProtocolSelection, TtfbClient, TtfbError, TtfbOptions,
     TtfbOutcome,
 };
 
 const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The step with the DNS lookup, which is marked if it was probably cached.
+const DNS_STEP: &str = "DNS Lookup";
+
+/// DNS lookups faster than this (in ms) were probably answered by a cache.
+const DNS_CACHED_MS: f64 = 2.0;
+
+/// The step with the TTFB, which is highlighted in the output.
+const TTFB_STEP: &str = "HTTP Resp TTFB";
 
 macro_rules! unwrap_or_exit {
     ($ident:ident) => {
@@ -41,6 +54,50 @@ macro_rules! unwrap_or_exit {
             $ident.unwrap()
         }
     };
+}
+
+/// How often or how long `--repeat` measures.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RepeatInput {
+    /// The number of measurements.
+    Times(NonZeroUsize),
+    /// The time to measure repeatedly, but at least once.
+    Duration(Duration),
+}
+
+impl RepeatInput {
+    /// Whether to measure again after `measurements` measurements, which took
+    /// `elapsed` in total.
+    fn should_continue(self, measurements: usize, elapsed: Duration) -> bool {
+        match self {
+            Self::Times(times) => measurements < times.get(),
+            Self::Duration(duration) => elapsed < duration,
+        }
+    }
+}
+
+impl FromStr for RepeatInput {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let invalid =
+            |_| "expected a number of measurements (e.g. 10) or of seconds (e.g. 5s)".to_string();
+        if let Some(seconds) = value.strip_suffix('s') {
+            let seconds: NonZeroU64 = seconds.parse().map_err(invalid)?;
+            Ok(Self::Duration(Duration::from_secs(seconds.get())))
+        } else {
+            value.parse().map(Self::Times).map_err(invalid)
+        }
+    }
+}
+
+impl Display for RepeatInput {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Times(times) => write!(f, "{times}"),
+            Self::Duration(duration) => write!(f, "{}s", duration.as_secs()),
+        }
+    }
 }
 
 /// CLI Arguments for `clap`.
@@ -72,6 +129,10 @@ struct TtfbArgs {
     /// Automatically choose the best supported HTTP protocol.
     #[arg(long, conflicts_with_all = ["http11", "http2", "http3"])]
     auto_protocol: bool,
+    /// Measure N times, or with an "s" suffix repeatedly for N seconds, and
+    /// print the minimum, median, mean, and maximum of each step.
+    #[arg(long, value_name = "N|Ns")]
+    repeat: Option<RepeatInput>,
 }
 
 /// Small CLI binary wrapper around the [`ttfb`] lib.
@@ -86,13 +147,41 @@ fn main() {
     } else {
         ProtocolSelection::Auto
     };
-    let client = TtfbClient::new(TtfbOptions {
+    let options = TtfbOptions {
         protocol,
         allow_insecure_certificates: input.allow_insecure_certificates,
+    };
+    if let Some(repeat) = input.repeat {
+        let res = measure_repeatedly(options, &input.host, repeat);
+        let outcomes = unwrap_or_exit!(res);
+        print_statistics(&outcomes).unwrap();
+    } else {
+        let res = TtfbClient::new(options).measure(input.host);
+        let ttfb = unwrap_or_exit!(res);
+        print_outcome(&ttfb).unwrap();
+    }
+}
+
+/// Measures `host` repeatedly, as specified by `repeat`.
+fn measure_repeatedly(
+    options: TtfbOptions,
+    host: &str,
+    repeat: RepeatInput,
+) -> Result<Vec<TtfbOutcome>, TtfbError> {
+    let begin = Instant::now();
+    let first = TtfbClient::new(options.clone()).measure(host)?;
+    // An automatic selection would probe the protocols again in every
+    // measurement. For servers without HTTP/3, each probe waits for the
+    // HTTP/3 timeout, so stick to the protocol of the first measurement.
+    let client = TtfbClient::new(TtfbOptions {
+        protocol: ProtocolSelection::Only(first.protocol()),
+        ..options
     });
-    let res = client.measure(input.host);
-    let ttfb = unwrap_or_exit!(res);
-    print_outcome(&ttfb).unwrap();
+    let mut outcomes = vec![first];
+    while repeat.should_continue(outcomes.len(), begin.elapsed()) {
+        outcomes.push(client.measure(host)?);
+    }
+    Ok(outcomes)
 }
 
 fn exit_error(err: TtfbError) -> ! {
@@ -105,10 +194,8 @@ fn exit_error(err: TtfbError) -> ! {
     exit(-1)
 }
 
-fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
-    stdout()
-        .execute(SetAttribute(Attribute::Bold))
-        .map_err(|err| err.to_string())?;
+/// Prints the URL and the HTTP protocol of the measurement.
+fn print_title(ttfb: &TtfbOutcome) {
     println!(
         "TTFB for {url} (by ttfb@v{crate_version})",
         url = ttfb.user_input(),
@@ -119,6 +206,105 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         ProtocolSelection::Only(_) => "",
     };
     println!("Protocol: {}{selection}", ttfb.protocol());
+}
+
+/// Returns the relative duration of each step of the measurement, followed by
+/// the total duration.
+fn steps(ttfb: &TtfbOutcome) -> Vec<(&'static str, Duration)> {
+    let mut steps = Vec::new();
+    if let Some(dns_lookup) = ttfb.dns_lookup_duration() {
+        steps.push((DNS_STEP, dns_lookup.relative()));
+    }
+    match ttfb.connection_handshake() {
+        ConnectionHandshake::Tcp { connect, tls } => {
+            steps.push(("TCP Connect", connect.relative()));
+            if let Some(tls) = tls {
+                steps.push(("TLS Handshake", tls.relative()));
+            }
+        }
+        ConnectionHandshake::Quic(handshake) => {
+            steps.push(("QUIC Handshake", handshake.relative()));
+        }
+    }
+    steps.push(("HTTP Send GET", ttfb.http_get_send_duration().relative()));
+    steps.push((TTFB_STEP, ttfb.ttfb_duration().relative()));
+    steps.push((
+        "HTTP Download",
+        ttfb.http_content_download_duration().relative(),
+    ));
+    steps.push(("Total", ttfb.http_content_download_duration().total()));
+    steps
+}
+
+/// Returns the minimum, median, mean, and maximum of `durations` in ms.
+fn statistics(durations: &mut [Duration]) -> [f64; 4] {
+    durations.sort_unstable();
+    let ms = |duration: Duration| duration.as_secs_f64() * 1000.0;
+    let len = durations.len();
+    let median = if len % 2 == 0 {
+        (ms(durations[len / 2 - 1]) + ms(durations[len / 2])) / 2.0
+    } else {
+        ms(durations[len / 2])
+    };
+    let mean = ms(durations.iter().sum()) / len as f64;
+    [ms(durations[0]), median, mean, ms(durations[len - 1])]
+}
+
+/// Prints the statistics of each step over all `outcomes`.
+fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
+    // All measurements use the same protocol, so they have the same steps.
+    let mut rows: Vec<(&str, Vec<Duration>)> = steps(&outcomes[0])
+        .into_iter()
+        .map(|(property, _)| (property, Vec::new()))
+        .collect();
+    for outcome in outcomes {
+        for ((_, durations), (_, duration)) in rows.iter_mut().zip(steps(outcome)) {
+            durations.push(duration);
+        }
+    }
+
+    stdout()
+        .execute(SetAttribute(Attribute::Bold))
+        .map_err(|err| err.to_string())?;
+    print_title(&outcomes[0]);
+    println!("Measurements: {}", outcomes.len());
+    println!(
+        "{:<16}{:>13}   {:>13}   {:>13}   {:>13}",
+        "PROPERTY", "MIN (ms)", "MEDIAN (ms)", "MEAN (ms)", "MAX (ms)"
+    );
+    stdout()
+        .execute(SetAttribute(Attribute::Reset))
+        .map_err(|err| err.to_string())?;
+
+    for (property, durations) in &mut rows {
+        let [min, median, mean, max] = statistics(durations);
+        let mut line =
+            format!("{property:<14}: {min:>13.3}   {median:>13.3}   {mean:>13.3}   {max:>13.3}");
+        // The first lookup may miss the cache, so judge by the median.
+        if *property == DNS_STEP && median < DNS_CACHED_MS {
+            line.push_str("  (probably cached)");
+        }
+        if *property == TTFB_STEP {
+            stdout()
+                .execute(SetAttribute(Attribute::Bold))
+                .map_err(|err| err.to_string())?;
+            println!("{line}");
+            stdout()
+                .execute(SetAttribute(Attribute::Reset))
+                .map_err(|err| err.to_string())?;
+        } else {
+            println!("{line}");
+        }
+    }
+
+    Ok(())
+}
+
+fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
+    stdout()
+        .execute(SetAttribute(Attribute::Bold))
+        .map_err(|err| err.to_string())?;
+    print_title(ttfb);
     println!("PROPERTY        REL TIME (ms)   ABS TIME (ms)");
     stdout()
         .execute(SetAttribute(Attribute::Reset))
@@ -129,11 +315,11 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         let duration = duration_pair.relative().as_secs_f64() * 1000.0;
         print!(
             "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
-            property = "DNS Lookup",
+            property = DNS_STEP,
             rel_time = duration,
             abs_time = duration,
         );
-        if duration < 2.0 {
+        if duration < DNS_CACHED_MS {
             print!("  (probably cached)");
         }
         println!();
@@ -142,7 +328,7 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         ConnectionHandshake::Tcp { connect, tls } => {
             println!(
                 "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
-                property = "TCP connect",
+                property = "TCP Connect",
                 rel_time = connect.relative().as_secs_f64() * 1000.0,
                 abs_time = connect.total().as_secs_f64() * 1000.0,
             );
@@ -166,7 +352,7 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
     }
     println!(
         "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
-        property = "HTTP GET Req",
+        property = "HTTP Send GET",
         rel_time = ttfb.http_get_send_duration().relative().as_secs_f64() * 1000.0,
         abs_time = ttfb.http_get_send_duration().total().as_secs_f64() * 1000.0,
     );
@@ -195,4 +381,39 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         .map_err(|err| err.to_string())?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_repeat() {
+        assert_eq!(
+            "10".parse(),
+            Ok(RepeatInput::Times(NonZeroUsize::new(10).unwrap()))
+        );
+        assert_eq!(
+            "5s".parse(),
+            Ok(RepeatInput::Duration(Duration::from_secs(5)))
+        );
+        for valid in ["10", "5s"] {
+            assert_eq!(valid.parse::<RepeatInput>().unwrap().to_string(), valid);
+        }
+        for invalid in ["", "0", "0s", "s", "-1", "1.5s", "5m", "5 s"] {
+            assert!(invalid.parse::<RepeatInput>().is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn statistics_odd_count() {
+        let mut durations = [3, 1, 8].map(Duration::from_millis);
+        assert_eq!(statistics(&mut durations), [1.0, 3.0, 4.0, 8.0]);
+    }
+
+    #[test]
+    fn statistics_even_count() {
+        let mut durations = [4, 1, 2, 9].map(Duration::from_millis);
+        assert_eq!(statistics(&mut durations), [1.0, 3.0, 4.0, 9.0]);
+    }
 }

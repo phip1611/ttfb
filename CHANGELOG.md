@@ -49,7 +49,12 @@ only change something for the binary.
   timeout of 1 s, which prolongs the run but not the measured timings.
 - Added `--http1.1`, `--http2`, `--http3`, and `--auto-protocol` to select
   the HTTP protocol.
+- Added `--repeat N` and `--repeat Ns`, which measure N times or repeatedly
+  for N seconds and print the minimum, median, mean, and maximum of each
+  step and of the total time.
 - The output shows the HTTP protocol and the download of the response.
+- The output labels "TCP connect" and "HTTP GET Req" are now "TCP Connect"
+  and "HTTP Send GET".
 - The output shows the QUIC handshake of HTTP/3 measurements instead of the
   TCP connect and the TLS handshake.
 - The release binary grows with the HTTP/2 and HTTP/3 support. On Linux,
