@@ -37,6 +37,12 @@ use ttfb::{
 
 const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// The step with the DNS lookup, which is marked if it was probably cached.
+const DNS_STEP: &str = "DNS Lookup";
+
+/// DNS lookups faster than this (in ms) were probably answered by a cache.
+const DNS_CACHED_MS: f64 = 2.0;
+
 /// The step with the TTFB, which is highlighted in the output.
 const TTFB_STEP: &str = "HTTP Resp TTFB";
 
@@ -207,7 +213,7 @@ fn print_title(ttfb: &TtfbOutcome) {
 fn steps(ttfb: &TtfbOutcome) -> Vec<(&'static str, Duration)> {
     let mut steps = Vec::new();
     if let Some(dns_lookup) = ttfb.dns_lookup_duration() {
-        steps.push(("DNS Lookup", dns_lookup.relative()));
+        steps.push((DNS_STEP, dns_lookup.relative()));
     }
     match ttfb.connection_handshake() {
         ConnectionHandshake::Tcp { connect, tls } => {
@@ -272,8 +278,12 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
 
     for (property, durations) in &mut rows {
         let [min, median, mean, max] = statistics(durations);
-        let line =
+        let mut line =
             format!("{property:<14}: {min:>13.3}   {median:>13.3}   {mean:>13.3}   {max:>13.3}");
+        // The first lookup may miss the cache, so judge by the median.
+        if *property == DNS_STEP && median < DNS_CACHED_MS {
+            line.push_str("  (probably cached)");
+        }
         if *property == TTFB_STEP {
             stdout()
                 .execute(SetAttribute(Attribute::Bold))
@@ -305,11 +315,11 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         let duration = duration_pair.relative().as_secs_f64() * 1000.0;
         print!(
             "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
-            property = "DNS Lookup",
+            property = DNS_STEP,
             rel_time = duration,
             abs_time = duration,
         );
-        if duration < 2.0 {
+        if duration < DNS_CACHED_MS {
             print!("  (probably cached)");
         }
         println!();
