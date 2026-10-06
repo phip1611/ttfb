@@ -177,7 +177,7 @@ struct TtfbArgs {
     #[arg(long)]
     headers: bool,
     /// Print the results only as JSON in a single line.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "headers")]
     json: bool,
 }
 
@@ -550,6 +550,7 @@ mod json {
     use humantime::format_rfc3339_millis;
     use serde::{Serialize, Serializer};
     use serde_json::value::RawValue;
+    use std::collections::BTreeMap;
     use std::net::IpAddr;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use ttfb::{ProtocolSelection, TtfbError, TtfbOutcome};
@@ -644,11 +645,20 @@ mod json {
         /// explicitly ("explicit").
         protocol_selection: &'static str,
         status: u16,
+        /// The values of each header in the order in which they were received.
+        /// Header names are in lowercase.
+        headers: BTreeMap<String, Vec<String>>,
     }
 
     impl JsonResponse {
         /// Returns the response of `ttfb`.
         fn from_outcome(ttfb: &TtfbOutcome) -> Self {
+            let mut headers = BTreeMap::<String, Vec<String>>::new();
+            for (name, value) in ttfb.headers() {
+                // Header values may contain bytes that aren't valid UTF-8.
+                let value = String::from_utf8_lossy(value.as_bytes()).into_owned();
+                headers.entry(name.to_string()).or_default().push(value);
+            }
             Self {
                 url: ttfb.user_input().to_string(),
                 ip: ttfb.ip_addr(),
@@ -659,6 +669,7 @@ mod json {
                     ProtocolSelection::Only(_) => "explicit",
                 },
                 status: ttfb.status().as_u16(),
+                headers,
             }
         }
     }
