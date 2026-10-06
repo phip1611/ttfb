@@ -32,15 +32,15 @@ jobs:
         with:
           key: "${{ matrix.runs-on }}-${{ matrix.rust }}"
       - name: cargo check (debug)
-        run: cargo check --all-targets --features bin --verbose
+        run: cargo check --all-targets --features bin
       - name: cargo check (release)
-        run: cargo check --all-targets --features bin --verbose --release
+        run: cargo check --all-targets --features bin --release
       - name: cargo build (debug)
-        run: cargo build --all-targets --features bin --verbose
+        run: cargo build --all-targets --features bin
       - name: cargo build (release)
-        run: cargo build --all-targets --features bin --verbose --release
-      - name: cargo test --verbose
-        run: cargo test --verbose
+        run: cargo build --all-targets --features bin --release
+      - name: cargo test
+        run: cargo test
       # Test that we don't segfault or so because of the LTO.
       - name: "CLI [release]: ttfb --help"
         run: cargo run --release --features bin -- --help
@@ -54,7 +54,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build Lib as Dependency with MSRV
-        run: cd ttfb-lib-msrv-check && cargo check --all-targets --verbose
+        run: cd ttfb-lib-msrv-check && cargo check --all-targets
 
   tests:
     runs-on: ubuntu-latest
@@ -66,7 +66,7 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo test --all-targets --verbose
+        run: cargo test --all-targets
 
   # Each protocol has a Cargo feature. Without it, the code paths that report
   # the protocol as unsupported are built instead.
@@ -103,12 +103,12 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
       - name: Build tests
-        run: cargo build --tests --verbose
+        run: cargo build --tests
       # An unreachable host blocks a test for minutes, until the TCP connect
       # times out. Fail early instead.
       - name: Run tests
         timeout-minutes: 2
-        run: cargo test --verbose -- network_tests
+        run: cargo test -- network_tests
 
   style_checks:
     runs-on: ubuntu-latest
