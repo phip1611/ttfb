@@ -51,7 +51,7 @@ only change something for the binary.
   the HTTP protocol.
 - Added `--repeat N` and `--repeat Ns`, which measure N times or repeatedly
   for N seconds and print the minimum, median, mean, and maximum of each
-  step.
+  step and of the total time.
 - The output shows the HTTP protocol and the download of the response.
 - The output shows the QUIC handshake of HTTP/3 measurements instead of the
   TCP connect and the TLS handshake.

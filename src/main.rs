@@ -202,7 +202,8 @@ fn print_title(ttfb: &TtfbOutcome) {
     println!("Protocol: {}{selection}", ttfb.protocol());
 }
 
-/// Returns the relative duration of each step of the measurement.
+/// Returns the relative duration of each step of the measurement, followed by
+/// the total duration.
 fn steps(ttfb: &TtfbOutcome) -> Vec<(&'static str, Duration)> {
     let mut steps = Vec::new();
     if let Some(dns_lookup) = ttfb.dns_lookup_duration() {
@@ -225,6 +226,7 @@ fn steps(ttfb: &TtfbOutcome) -> Vec<(&'static str, Duration)> {
         "HTTP Download",
         ttfb.http_content_download_duration().relative(),
     ));
+    steps.push(("Total", ttfb.http_content_download_duration().total()));
     steps
 }
 

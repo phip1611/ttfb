@@ -38,7 +38,7 @@ servers without HTTP/3, the HTTP/3 attempt usually waits for its timeout of
 
 With `--repeat N`, the CLI measures N times, and with `--repeat Ns`
 repeatedly for N seconds. Then, it prints the minimum, median, mean, and
-maximum of each step. All measurements use the protocol of the first one. \
+maximum of each step and of the total time. All measurements use the protocol of the first one. \
 Example: `$ ttfb --repeat 10 https://phip1611.de` or
 `$ ttfb --repeat 5s https://phip1611.de`
 
