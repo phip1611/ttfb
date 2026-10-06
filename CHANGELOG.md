@@ -61,7 +61,8 @@ only change something for the binary.
   step and of the total time.
 - Added `--timeout <SECS>`, the maximum duration of a measurement, which
   defaults to 10 s and must be between 1 s and 3600 s.
-- The output shows the HTTP protocol and the download of the response.
+- The output shows the HTTP protocol, the status, and the download of the
+  response.
 - The output labels "TCP connect" and "HTTP GET Req" are now "TCP Connect"
   and "HTTP Send GET".
 - The output shows the QUIC handshake of HTTP/3 measurements instead of the

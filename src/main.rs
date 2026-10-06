@@ -206,7 +206,8 @@ fn exit_error(err: TtfbError) -> ! {
     exit(-1)
 }
 
-/// Prints the URL and the HTTP protocol of the measurement.
+/// Prints the URL, the HTTP protocol, and the response status of the
+/// measurement.
 fn print_title(ttfb: &TtfbOutcome) {
     println!(
         "TTFB for {url} (by ttfb@v{crate_version})",
@@ -218,6 +219,7 @@ fn print_title(ttfb: &TtfbOutcome) {
         ProtocolSelection::Only(_) => "",
     };
     println!("Protocol: {}{selection}", ttfb.protocol());
+    println!("Status: {}", ttfb.status());
 }
 
 /// Returns the relative duration of each step of the measurement, followed by

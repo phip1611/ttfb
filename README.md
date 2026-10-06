@@ -80,6 +80,7 @@ If you installed the CLI and invoke it like `$ ttfb https://phip1611.de`, the ou
 ```text
 TTFB for https://phip1611.de (by ttfb@v2.0.0)
 Protocol: HTTP/2 (selected automatically)
+Status: 200 OK
 PROPERTY        REL TIME (ms)   ABS TIME (ms)
 DNS Lookup    :         1.110           1.110  (probably cached)
 TCP Connect   :         8.025           9.135
@@ -93,6 +94,7 @@ For HTTP/3, the QUIC handshake replaces the TCP connect and the TLS handshake:
 ```text
 TTFB for https://www.cloudflare.com (by ttfb@v2.0.0)
 Protocol: HTTP/3 (selected automatically)
+Status: 200 OK
 PROPERTY        REL TIME (ms)   ABS TIME (ms)
 DNS Lookup    :         1.070           1.070  (probably cached)
 QUIC Handshake:        16.562          17.632
@@ -107,6 +109,7 @@ instead:
 $ ttfb --repeat 2s https://phip1611.de
 TTFB for https://phip1611.de (by ttfb@v2.0.0)
 Protocol: HTTP/2 (selected automatically)
+Status: 200 OK
 Measurements: 19
 PROPERTY             MIN (ms)     MEDIAN (ms)       MEAN (ms)        MAX (ms)
 DNS Lookup    :         0.932           1.086           1.310           3.289  (probably cached)
