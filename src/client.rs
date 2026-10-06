@@ -106,13 +106,17 @@ impl TtfbClient {
     /// Measures `target` via HTTP/3. The asynchronous exchange runs on a
     /// dedicated Tokio runtime.
     #[cfg(feature = "http3")]
-    fn measure_http3(&self, target: &Target) -> Result<TtfbOutcome, TtfbError> {
-        run_in_tokio(http3::measure(target, Arc::clone(&self.tls_config)))
+    fn measure_http3(&self, target: &Target, deadline: Deadline) -> Result<TtfbOutcome, TtfbError> {
+        run_in_tokio(deadline.run(http3::measure(target, Arc::clone(&self.tls_config))))
     }
 
     /// Fails, as the crate was built without the `http3` feature.
     #[cfg(not(feature = "http3"))]
-    fn measure_http3(&self, _target: &Target) -> Result<TtfbOutcome, TtfbError> {
+    fn measure_http3(
+        &self,
+        _target: &Target,
+        _deadline: Deadline,
+    ) -> Result<TtfbOutcome, TtfbError> {
         Err(TtfbError::UnsupportedHttpProtocol(
             "ttfb was built without the http3 feature".into(),
         ))
@@ -124,7 +128,7 @@ impl TtfbClient {
         if target.url.scheme() != "https" {
             return self.measure_http11(target);
         }
-        self.measure_http3(target)
+        self.measure_http3(target, deadline)
             .or_else(|error| match error {
                 TtfbError::UnsupportedHttpProtocol(_) => self.measure_http2(target, deadline),
                 error => Err(error),
@@ -164,7 +168,7 @@ impl TtfbClient {
             ProtocolSelection::Auto => self.measure_auto(&target, deadline),
             ProtocolSelection::Only(HttpProtocol::Http11) => self.measure_http11(&target),
             ProtocolSelection::Only(HttpProtocol::Http2) => self.measure_http2(&target, deadline),
-            ProtocolSelection::Only(HttpProtocol::Http3) => self.measure_http3(&target),
+            ProtocolSelection::Only(HttpProtocol::Http3) => self.measure_http3(&target, deadline),
         }?;
         Ok(outcome.with_protocol_selection(self.options.protocol))
     }
