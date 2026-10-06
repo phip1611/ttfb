@@ -228,8 +228,8 @@ fn print_title(ttfb: &TtfbOutcome) {
         ProtocolSelection::Auto => " (selected automatically)",
         ProtocolSelection::Only(_) => "",
     };
-    println!("Protocol: {}{selection}", ttfb.protocol());
-    println!("Status: {}", ttfb.status());
+    println!("{:<14}: {}{selection}", "Protocol", ttfb.protocol());
+    println!("{:<14}: {}", "Status", ttfb.status());
 }
 
 /// Returns the relative duration of each step of the measurement, followed by
@@ -291,7 +291,7 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
         .execute(SetAttribute(Attribute::Bold))
         .map_err(|err| err.to_string())?;
     print_title(&outcomes[0]);
-    println!("Measurements: {}", outcomes.len());
+    println!("{:<14}: {}", "Measurements", outcomes.len());
     println!(
         "{:<16}{:>13}   {:>13}   {:>13}   {:>13}",
         "PROPERTY", "MIN (ms)", "MEDIAN (ms)", "MEAN (ms)", "MAX (ms)"
