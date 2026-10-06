@@ -44,6 +44,9 @@ only change something for the binary.
   lookup to the end of the download. It defaults to 10 s and must be between
   1 s and 60 min. A measurement that exceeds it fails with the new
   `TtfbError::Timeout`.
+- `TtfbOutcome::status()` and `TtfbOutcome::headers()` return the status code
+  and the headers of the final response. The types `StatusCode` and
+  `HeaderMap` of the `http` crate are re-exported.
 
 ## ttfb binary
 

@@ -370,13 +370,11 @@ fn tls_handshake_if_necessary(
 /// Measures one GET request via HTTP/1.1: TCP connect, the TLS handshake for
 /// HTTPS, sending the request, the first response byte, and the download of
 /// the complete response. Reads and writes fail when `deadline` passes.
-///
-/// Also returns the head of the response.
 pub fn measure(
     target: &Target,
     tls_config: Arc<ClientConfig>,
     deadline: Deadline,
-) -> Result<(TtfbOutcome, ResponseHead), TtfbError> {
+) -> Result<TtfbOutcome, TtfbError> {
     // Connect, with a TLS handshake for HTTPS.
     let (tcp, tcp_connect_duration) = tcp_connect(target.address, target.port, deadline)?;
     let (mut tcp, tls_handshake_duration) =
@@ -408,7 +406,7 @@ pub fn measure(
         (response, now.elapsed())
     };
 
-    let outcome = TtfbOutcome::new(
+    Ok(TtfbOutcome::new(
         target.input.clone(),
         target.address,
         target.port,
@@ -423,8 +421,8 @@ pub fn measure(
             http_content_download: http_content_download_duration,
         },
         HttpProtocol::Http11,
-    );
-    Ok((outcome, response))
+        response,
+    ))
 }
 
 #[cfg(test)]
