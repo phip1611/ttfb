@@ -4,6 +4,7 @@
 
 use hickory_resolver::{ResolveError, ResolveErrorKind};
 use std::io;
+use std::time::Duration;
 use thiserror::Error;
 
 /// Errors during DNS resolving.
@@ -93,6 +94,15 @@ pub enum TtfbError {
     /// There was a problem with the TCP stream.
     #[error("There was a problem with the TCP stream because: {0}")]
     OtherStreamError(#[source] io::Error),
+    /// [`TtfbOptions::timeout`] is out of range.
+    ///
+    /// [`TtfbOptions::timeout`]: crate::TtfbOptions::timeout
+    #[error(
+        "The timeout must be between {min:?} and {max:?}, but is {0:?}",
+        min = crate::TtfbOptions::MIN_TIMEOUT,
+        max = crate::TtfbOptions::MAX_TIMEOUT
+    )]
+    InvalidTimeout(Duration),
     /// Can't configure trust-dns-resolver configuration.
     #[error("Failed to configure DNS based on system or default settings: {0}")]
     CantConfigureDNSError(#[source] ResolveError),
@@ -116,6 +126,7 @@ impl PartialEq for TtfbError {
             }
             (Self::NoHttpResponse, Self::NoHttpResponse) => true,
             (Self::InvalidHttpResponse(e1), Self::InvalidHttpResponse(e2)) => e1.eq(e2),
+            (Self::InvalidTimeout(t1), Self::InvalidTimeout(t2)) => t1.eq(t2),
             _ => false,
         }
     }

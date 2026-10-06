@@ -40,6 +40,9 @@ only change something for the binary.
 - `ProtocolSelection::Auto`, the default, selects HTTP/3, HTTP/2, or
   HTTP/1.1, whichever the server supports first in this order. Protocols built
   without their Cargo feature are skipped.
+- `TtfbOptions::timeout` limits the duration of a measurement, from the DNS
+  lookup to the end of the download. It defaults to 10 s and must be between
+  1 s and 60 min.
 
 ## ttfb binary
 

@@ -150,6 +150,7 @@ fn main() {
     let options = TtfbOptions {
         protocol,
         allow_insecure_certificates: input.allow_insecure_certificates,
+        ..TtfbOptions::default()
     };
     if let Some(repeat) = input.repeat {
         let res = measure_repeatedly(options, &input.host, repeat);

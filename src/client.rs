@@ -12,6 +12,7 @@ use crate::target::Target;
 use crate::{HttpProtocol, TtfbError, TtfbOutcome, http11, tls};
 use rustls::ClientConfig;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Which HTTP protocol a [`TtfbClient`] measures.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -25,13 +26,35 @@ pub enum ProtocolSelection {
 }
 
 /// Configuration for [`TtfbClient`].
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct TtfbOptions {
     /// The HTTP protocol to measure.
     pub protocol: ProtocolSelection,
     /// Whether invalid TLS certificates (untrusted, expired, wrong host)
     /// are accepted. Similar to `-k/--insecure` in `curl`.
     pub allow_insecure_certificates: bool,
+    /// The maximum duration of a measurement, from the DNS lookup to the end
+    /// of the download. Defaults to [`TtfbOptions::DEFAULT_TIMEOUT`].
+    pub timeout: Duration,
+}
+
+impl TtfbOptions {
+    /// The default of [`TtfbOptions::timeout`].
+    pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+    /// The minimum of [`TtfbOptions::timeout`].
+    pub const MIN_TIMEOUT: Duration = Duration::from_secs(1);
+    /// The maximum of [`TtfbOptions::timeout`].
+    pub const MAX_TIMEOUT: Duration = Duration::from_secs(60 * 60);
+}
+
+impl Default for TtfbOptions {
+    fn default() -> Self {
+        Self {
+            protocol: ProtocolSelection::default(),
+            allow_insecure_certificates: false,
+            timeout: Self::DEFAULT_TIMEOUT,
+        }
+    }
 }
 
 /// Measures the TTFB (time to first byte) of HTTP(S) requests, including the
@@ -107,6 +130,15 @@ impl TtfbClient {
             })
     }
 
+    /// Checks that the options are valid.
+    fn validate(&self) -> Result<(), TtfbError> {
+        let timeout = self.options.timeout;
+        if !(TtfbOptions::MIN_TIMEOUT..=TtfbOptions::MAX_TIMEOUT).contains(&timeout) {
+            return Err(TtfbError::InvalidTimeout(timeout));
+        }
+        Ok(())
+    }
+
     /// Measures one GET request to `input`.
     ///
     /// `input` is a URL pointing to an HTTP server, such as:
@@ -120,6 +152,7 @@ impl TtfbClient {
     /// - `12.34.56.78/foobar` (defaults to `http://`)
     /// - `12.34.56.78` (defaults to `http://`)
     pub fn measure(&self, input: impl AsRef<str>) -> Result<TtfbOutcome, TtfbError> {
+        self.validate()?;
         let target = Target::resolve(input.as_ref())?;
         let outcome = match self.options.protocol {
             ProtocolSelection::Auto => self.measure_auto(&target),
@@ -128,6 +161,36 @@ impl TtfbClient {
             ProtocolSelection::Only(HttpProtocol::Http3) => self.measure_http3(&target),
         }?;
         Ok(outcome.with_protocol_selection(self.options.protocol))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Measures `url` via `protocol` with `timeout`.
+    fn measure(
+        url: &str,
+        protocol: HttpProtocol,
+        timeout: Duration,
+    ) -> Result<TtfbOutcome, TtfbError> {
+        TtfbClient::new(TtfbOptions {
+            protocol: ProtocolSelection::Only(protocol),
+            timeout,
+            ..TtfbOptions::default()
+        })
+        .measure(url)
+    }
+
+    #[test]
+    fn invalid_timeout() {
+        for timeout in [
+            Duration::ZERO,
+            TtfbOptions::MAX_TIMEOUT + Duration::from_secs(1),
+        ] {
+            let result = measure("http://127.0.0.1", HttpProtocol::Http11, timeout);
+            assert_eq!(result, Err(TtfbError::InvalidTimeout(timeout)));
+        }
     }
 }
 
@@ -151,6 +214,7 @@ mod network_tests {
         TtfbClient::new(TtfbOptions {
             protocol: ProtocolSelection::Only(HttpProtocol::Http11),
             allow_insecure_certificates,
+            ..TtfbOptions::default()
         })
         .measure(input)
     }
