@@ -49,6 +49,8 @@ only change something for the binary.
   timeout of 1 s, which prolongs the run but not the measured timings.
 - Added `--http1.1`, `--http2`, `--http3`, and `--auto-protocol` to select
   the HTTP protocol.
+- Added `--repeat N`, which measures N times and prints the minimum, median,
+  mean, and maximum of each step.
 - The output shows the HTTP protocol and the download of the response.
 - The output shows the QUIC handshake of HTTP/3 measurements instead of the
   TCP connect and the TLS handshake.
