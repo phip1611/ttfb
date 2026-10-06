@@ -586,11 +586,11 @@ mod json {
         }
     }
 
-    /// The statistics of the durations of a step.
+    /// The statistics of the relative and the absolute duration of a step.
     #[derive(Debug, Serialize)]
     struct JsonDurationStatistics {
-        /// The statistics of the duration of the step itself.
         relative: JsonStatistics,
+        absolute: JsonStatistics,
     }
 
     /// The statistics of each step by its key, in the order of the steps.
@@ -608,11 +608,15 @@ mod json {
     impl JsonStepStatistics {
         /// Returns the statistics of each step over all `outcomes`.
         fn from_outcomes(outcomes: &[TtfbOutcome]) -> Self {
-            let statistics = step_durations(outcomes, |step| step.relative)
+            let relative = step_durations(outcomes, |step| step.relative);
+            let absolute = step_durations(outcomes, |step| step.absolute);
+            let statistics = relative
                 .into_iter()
-                .map(|(step, relative)| {
+                .zip(absolute)
+                .map(|((step, relative), (_, absolute))| {
                     let statistics = JsonDurationStatistics {
                         relative: JsonStatistics::of(&relative),
+                        absolute: JsonStatistics::of(&absolute),
                     };
                     (step.name.key, statistics)
                 })
@@ -656,12 +660,13 @@ mod json {
                 mean: ms,
                 max: ms,
             };
-            let step = |relative| JsonDurationStatistics {
+            let step = |relative, absolute| JsonDurationStatistics {
                 relative: statistics(relative),
+                absolute: statistics(absolute),
             };
             let steps = JsonStepStatistics(vec![
-                ("ttfb", step(2.0)),
-                ("http_content_download", step(7.0)),
+                ("ttfb", step(2.0, 5.0)),
+                ("http_content_download", step(7.0, 7.0)),
             ]);
             let expected = r#"{
   "ttfb": {
@@ -670,10 +675,22 @@ mod json {
       "median": 2.000,
       "mean": 2.000,
       "max": 2.000
+    },
+    "absolute": {
+      "min": 5.000,
+      "median": 5.000,
+      "mean": 5.000,
+      "max": 5.000
     }
   },
   "http_content_download": {
     "relative": {
+      "min": 7.000,
+      "median": 7.000,
+      "mean": 7.000,
+      "max": 7.000
+    },
+    "absolute": {
       "min": 7.000,
       "median": 7.000,
       "mean": 7.000,

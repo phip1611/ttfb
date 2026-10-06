@@ -56,8 +56,10 @@ response, which often explain the timings, e.g., `cache-status` or
 `server-timing`. With `--repeat`, it prints those of the first measurement.
 
 With `--json`, the CLI prints the results only as JSON in a single line, e.g.,
-for scripts. \
-Example: `$ ttfb --json https://phip1611.de | jq .statistics_ms.ttfb.relative.median`
+for scripts.
+What is usually meant by TTFB, the time from the start of the measurement to
+the first byte of the response, is `statistics_ms.ttfb.absolute.median`. \
+Example: `$ ttfb --json https://phip1611.de | jq .statistics_ms.ttfb.absolute.median`
 
 The JSON format may get new fields at any time, so scripts should ignore
 unknown fields. `schema_version` increases if a field is removed or changes
