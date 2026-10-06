@@ -97,6 +97,23 @@ HTTP Resp TTFB:        80.432          98.116
 HTTP Download :       295.336         393.452
 ```
 
+With `--repeat`, the output shows statistics of each step and of the total time
+instead:
+```text
+$ ttfb --repeat 2s https://phip1611.de
+TTFB for https://phip1611.de (by ttfb@v2.0.0)
+Protocol: HTTP/2 (selected automatically)
+Measurements: 19
+PROPERTY             MIN (ms)     MEDIAN (ms)       MEAN (ms)        MAX (ms)
+DNS Lookup    :         0.932           1.086           1.310           3.289  (probably cached)
+TCP connect   :         6.724           7.848           7.969          12.479
+TLS Handshake :        12.806          14.625          14.691          15.991
+HTTP GET Req  :         0.069           0.087           0.102           0.182
+HTTP Resp TTFB:        17.393          29.861          27.645          38.382
+HTTP Download :         0.007           0.012           0.012           0.018
+Total         :        38.906          53.604          51.729          62.751
+```
+
 ## MSRV
 The MSRV of the library is `1.85.0` stable.
 The MSRV of the binary is `1.85.0` stable.
