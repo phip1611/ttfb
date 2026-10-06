@@ -46,6 +46,10 @@ A measurement fails if it takes longer than 10 s. Use `--timeout <SECS>` to
 change this limit to between 1 s and 3600 s. With `--repeat`, it applies to
 each measurement.
 
+With `--headers`, the CLI also prints the status line and the headers of the
+response, which often explain the timings, e.g., `cache-status` or
+`server-timing`. With `--repeat`, it prints those of the first measurement.
+
 ## Usage Library
 The library exposes `TtfbClient`, which is configured with `TtfbOptions`:
 

@@ -144,6 +144,10 @@ struct TtfbArgs {
         ),
     )]
     timeout: u64,
+    /// Print the status line and the headers of the response. With --repeat,
+    /// print those of the first measurement.
+    #[arg(long)]
+    headers: bool,
 }
 
 /// Small CLI binary wrapper around the [`ttfb`] lib.
@@ -167,10 +171,16 @@ fn main() {
         let res = measure_repeatedly(options, &input.host, repeat);
         let outcomes = unwrap_or_exit!(res);
         print_statistics(&outcomes).unwrap();
+        if input.headers {
+            print_headers(&outcomes[0]).unwrap();
+        }
     } else {
         let res = TtfbClient::new(options).measure(input.host);
         let ttfb = unwrap_or_exit!(res);
         print_outcome(&ttfb).unwrap();
+        if input.headers {
+            print_headers(&ttfb).unwrap();
+        }
     }
 }
 
@@ -311,6 +321,23 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
         }
     }
 
+    Ok(())
+}
+
+/// Prints the status line and the headers of the response.
+fn print_headers(ttfb: &TtfbOutcome) -> Result<(), String> {
+    println!();
+    stdout()
+        .execute(SetAttribute(Attribute::Bold))
+        .map_err(|err| err.to_string())?;
+    println!("{} {}", ttfb.protocol(), ttfb.status());
+    stdout()
+        .execute(SetAttribute(Attribute::Reset))
+        .map_err(|err| err.to_string())?;
+    for (name, value) in ttfb.headers() {
+        // Header values may contain bytes that aren't valid UTF-8.
+        println!("{name}: {}", String::from_utf8_lossy(value.as_bytes()));
+    }
     Ok(())
 }
 
