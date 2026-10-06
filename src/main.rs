@@ -26,10 +26,10 @@ use crossterm::ExecutableCommand;
 use crossterm::style::{Attribute, SetAttribute};
 use std::fmt::{self, Display, Formatter};
 use std::io::stdout;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroU64, NonZeroUsize};
 use std::process::exit;
 use std::str::FromStr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use ttfb::{
     ConnectionHandshake, HttpProtocol, ProtocolSelection, TtfbClient, TtfbError, TtfbOptions,
     TtfbOutcome,
@@ -50,18 +50,22 @@ macro_rules! unwrap_or_exit {
     };
 }
 
-/// How often `--repeat` measures.
+/// How often or how long `--repeat` measures.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RepeatInput {
     /// The number of measurements.
     Times(NonZeroUsize),
+    /// The time to measure repeatedly, but at least once.
+    Duration(Duration),
 }
 
 impl RepeatInput {
-    /// Whether to measure again after `measurements` measurements.
-    const fn should_continue(self, measurements: usize) -> bool {
+    /// Whether to measure again after `measurements` measurements, which took
+    /// `elapsed` in total.
+    fn should_continue(self, measurements: usize, elapsed: Duration) -> bool {
         match self {
             Self::Times(times) => measurements < times.get(),
+            Self::Duration(duration) => elapsed < duration,
         }
     }
 }
@@ -70,10 +74,14 @@ impl FromStr for RepeatInput {
     type Err = String;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        value
-            .parse()
-            .map(Self::Times)
-            .map_err(|_| "expected a number of measurements (e.g. 10)".to_string())
+        let invalid =
+            |_| "expected a number of measurements (e.g. 10) or of seconds (e.g. 5s)".to_string();
+        if let Some(seconds) = value.strip_suffix('s') {
+            let seconds: NonZeroU64 = seconds.parse().map_err(invalid)?;
+            Ok(Self::Duration(Duration::from_secs(seconds.get())))
+        } else {
+            value.parse().map(Self::Times).map_err(invalid)
+        }
     }
 }
 
@@ -81,6 +89,7 @@ impl Display for RepeatInput {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Times(times) => write!(f, "{times}"),
+            Self::Duration(duration) => write!(f, "{}s", duration.as_secs()),
         }
     }
 }
@@ -114,9 +123,9 @@ struct TtfbArgs {
     /// Automatically choose the best supported HTTP protocol.
     #[arg(long, conflicts_with_all = ["http11", "http2", "http3"])]
     auto_protocol: bool,
-    /// Measure N times and print the minimum, median, mean, and maximum of
-    /// each step.
-    #[arg(long, value_name = "N")]
+    /// Measure N times, or with an "s" suffix repeatedly for N seconds, and
+    /// print the minimum, median, mean, and maximum of each step.
+    #[arg(long, value_name = "N|Ns")]
     repeat: Option<RepeatInput>,
 }
 
@@ -153,6 +162,7 @@ fn measure_repeatedly(
     host: &str,
     repeat: RepeatInput,
 ) -> Result<Vec<TtfbOutcome>, TtfbError> {
+    let begin = Instant::now();
     let first = TtfbClient::new(options.clone()).measure(host)?;
     // An automatic selection would probe the protocols again in every
     // measurement. For servers without HTTP/3, each probe waits for the
@@ -162,7 +172,7 @@ fn measure_repeatedly(
         ..options
     });
     let mut outcomes = vec![first];
-    while repeat.should_continue(outcomes.len()) {
+    while repeat.should_continue(outcomes.len(), begin.elapsed()) {
         outcomes.push(client.measure(host)?);
     }
     Ok(outcomes)
@@ -371,8 +381,14 @@ mod tests {
             "10".parse(),
             Ok(RepeatInput::Times(NonZeroUsize::new(10).unwrap()))
         );
-        assert_eq!("10".parse::<RepeatInput>().unwrap().to_string(), "10");
-        for invalid in ["", "0", "-1", "1.5", "5s"] {
+        assert_eq!(
+            "5s".parse(),
+            Ok(RepeatInput::Duration(Duration::from_secs(5)))
+        );
+        for valid in ["10", "5s"] {
+            assert_eq!(valid.parse::<RepeatInput>().unwrap().to_string(), valid);
+        }
+        for invalid in ["", "0", "0s", "s", "-1", "1.5s", "5m", "5 s"] {
             assert!(invalid.parse::<RepeatInput>().is_err(), "{invalid}");
         }
     }

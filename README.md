@@ -36,10 +36,11 @@ servers without HTTP/3, the HTTP/3 attempt usually waits for its timeout of
 1 s, which prolongs the run but not the measured timings. Use `--http1.1`,
 `--http2`, or `--http3` to require a protocol.
 
-With `--repeat N`, the CLI measures N times and prints the minimum, median,
-mean, and maximum of each step. All measurements use the protocol of the first
-one. \
-Example: `$ ttfb --repeat 10 https://phip1611.de`
+With `--repeat N`, the CLI measures N times, and with `--repeat Ns`
+repeatedly for N seconds. Then, it prints the minimum, median, mean, and
+maximum of each step. All measurements use the protocol of the first one. \
+Example: `$ ttfb --repeat 10 https://phip1611.de` or
+`$ ttfb --repeat 5s https://phip1611.de`
 
 ## Usage Library
 The library exposes `TtfbClient`, which is configured with `TtfbOptions`:
