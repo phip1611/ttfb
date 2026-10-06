@@ -40,6 +40,10 @@ only change something for the binary.
 - `ProtocolSelection::Auto`, the default, selects HTTP/3, HTTP/2, or
   HTTP/1.1, whichever the server supports first in this order. Protocols built
   without their Cargo feature are skipped.
+- `TtfbOptions::timeout` limits the duration of a measurement, from the DNS
+  lookup to the end of the download. It defaults to 10 s and must be between
+  1 s and 60 min. A measurement that exceeds it fails with the new
+  `TtfbError::Timeout`.
 
 ## ttfb binary
 
@@ -52,6 +56,8 @@ only change something for the binary.
 - Added `--repeat N` and `--repeat Ns`, which measure N times or repeatedly
   for N seconds and print the minimum, median, mean, and maximum of each
   step and of the total time.
+- Added `--timeout <SECS>`, the maximum duration of a measurement, which
+  defaults to 10 s and must be between 1 s and 3600 s.
 - The output shows the HTTP protocol and the download of the response.
 - The output labels "TCP connect" and "HTTP GET Req" are now "TCP Connect"
   and "HTTP Send GET".

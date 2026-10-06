@@ -139,11 +139,12 @@ pub async fn measure(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::deadline::Deadline;
     use crate::run_in_tokio;
 
     #[test]
     fn requires_https() {
-        let target = Target::resolve("http://localhost:1").unwrap();
+        let target = Target::resolve("http://localhost:1", Deadline::for_tests()).unwrap();
         let result = run_in_tokio(measure(&target, tls::config(false)));
         assert!(matches!(result, Err(TtfbError::UnsupportedHttpProtocol(_))));
     }

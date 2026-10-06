@@ -133,6 +133,17 @@ struct TtfbArgs {
     /// print the minimum, median, mean, and maximum of each step.
     #[arg(long, value_name = "N|Ns")]
     repeat: Option<RepeatInput>,
+    /// The maximum duration of a measurement in seconds, between 1 and 3600.
+    /// With --repeat, it applies to each measurement.
+    #[arg(
+        long,
+        value_name = "SECS",
+        default_value_t = TtfbOptions::DEFAULT_TIMEOUT.as_secs(),
+        value_parser = clap::value_parser!(u64).range(
+            TtfbOptions::MIN_TIMEOUT.as_secs()..=TtfbOptions::MAX_TIMEOUT.as_secs()
+        ),
+    )]
+    timeout: u64,
 }
 
 /// Small CLI binary wrapper around the [`ttfb`] lib.
@@ -150,6 +161,7 @@ fn main() {
     let options = TtfbOptions {
         protocol,
         allow_insecure_certificates: input.allow_insecure_certificates,
+        timeout: Duration::from_secs(input.timeout),
     };
     if let Some(repeat) = input.repeat {
         let res = measure_repeatedly(options, &input.host, repeat);
