@@ -32,7 +32,7 @@ use std::net::SocketAddr;
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::process::exit;
 use std::str::FromStr;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 use ttfb::{
     ConnectionHandshake, DurationPair, HttpProtocol, IpVersion, ProtocolSelection, TtfbClient,
     TtfbError, TtfbOptions, TtfbOutcome,
@@ -211,8 +211,9 @@ fn main() {
         let repeat = input
             .repeat
             .unwrap_or(RepeatInput::Times(NonZeroUsize::MIN));
+        let started_at = SystemTime::now();
         let result = measure_repeatedly(options, &input.host, repeat);
-        print_json(&result);
+        print_json(started_at, &result);
         if result.is_err() {
             exit(-1);
         }
@@ -474,9 +475,9 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
     Ok(())
 }
 
-/// Prints the JSON output of the measurements.
-fn print_json(result: &Result<Vec<TtfbOutcome>, TtfbError>) {
-    let output = json::JsonOutput::new(result);
+/// Prints the JSON output of the measurements that started at `started_at`.
+fn print_json(started_at: SystemTime, result: &Result<Vec<TtfbOutcome>, TtfbError>) {
+    let output = json::JsonOutput::new(started_at, result);
     let json = to_string(&output).expect("should serialize, as all map keys are strings");
     println!("{json}");
 }
@@ -546,9 +547,10 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
 /// the measurements or their error, and which serializes to the JSON format.
 mod json {
     use super::{calc_statistics_from_durations, step_durations};
+    use humantime::format_rfc3339_millis;
     use serde::{Serialize, Serializer};
     use serde_json::value::RawValue;
-    use std::time::Duration;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use ttfb::{TtfbError, TtfbOutcome};
 
     /// The version of the JSON output. It increases with incompatible changes.
@@ -670,6 +672,10 @@ mod json {
     #[derive(Debug, Serialize)]
     pub(super) struct JsonOutput {
         schema_version: u32,
+        /// When the first measurement started, in RFC 3339 format in UTC.
+        started_at: String,
+        /// When the first measurement started, as Unix timestamp in ms.
+        started_at_unix_ms: u128,
         /// The error, if a measurement failed. Then, there are no statistics.
         error: Option<JsonError>,
         /// The number of measurements.
@@ -680,15 +686,24 @@ mod json {
     }
 
     impl JsonOutput {
-        /// Creates the output of the measurements: either all of them or the
-        /// error of the one that failed.
-        pub(super) fn new(result: &Result<Vec<TtfbOutcome>, TtfbError>) -> Self {
+        /// Creates the output of the measurements that started at
+        /// `started_at`: either all of them or the error of the one that
+        /// failed.
+        pub(super) fn new(
+            started_at: SystemTime,
+            result: &Result<Vec<TtfbOutcome>, TtfbError>,
+        ) -> Self {
             let (outcomes, error) = match result {
                 Ok(outcomes) => (outcomes.as_slice(), None),
                 Err(error) => (&[][..], Some(JsonError::from_error(error))),
             };
             Self {
                 schema_version: JSON_SCHEMA_VERSION,
+                started_at: format_rfc3339_millis(started_at).to_string(),
+                started_at_unix_ms: started_at
+                    .duration_since(UNIX_EPOCH)
+                    .expect("system time should be after the Unix epoch")
+                    .as_millis(),
                 error,
                 measurements_num: outcomes.len(),
                 statistics_ms: JsonStepStatistics::from_outcomes(outcomes),
@@ -752,9 +767,10 @@ mod json {
 
         #[test]
         fn json_output_of_an_error() {
-            let output = JsonOutput::new(&Err(TtfbError::NoHttpResponse));
+            let output = JsonOutput::new(UNIX_EPOCH, &Err(TtfbError::NoHttpResponse));
             let expected = concat!(
-                r#"{"schema_version":1,"#,
+                r#"{"schema_version":1,"started_at":"1970-01-01T00:00:00.000Z","#,
+                r#""started_at_unix_ms":0,"#,
                 r#""error":{"kind":"http","#,
                 r#""message":"Didn't receive any data. Is the host running a HTTP server?"},"#,
                 r#""measurements_num":0,"statistics_ms":{}}"#,
