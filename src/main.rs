@@ -305,7 +305,8 @@ fn step_durations(outcomes: &[TtfbOutcome]) -> Vec<(Step, Vec<Duration>)> {
 }
 
 /// Returns the minimum, median, mean, and maximum of `durations` in ms.
-fn statistics(durations: &mut [Duration]) -> [f64; 4] {
+fn calc_statistics_from_durations(durations: &[Duration]) -> [f64; 4] {
+    let mut durations = durations.to_vec();
     durations.sort_unstable();
     let ms = |duration: Duration| duration.as_secs_f64() * 1000.0;
     let len = durations.len();
@@ -320,7 +321,7 @@ fn statistics(durations: &mut [Duration]) -> [f64; 4] {
 
 /// Prints the statistics of each step over all `outcomes`.
 fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
-    let mut rows = step_durations(outcomes);
+    let rows = step_durations(outcomes);
 
     stdout()
         .execute(SetAttribute(Attribute::Bold))
@@ -335,9 +336,9 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
         .execute(SetAttribute(Attribute::Reset))
         .map_err(|err| err.to_string())?;
 
-    for (step, durations) in &mut rows {
+    for (step, durations) in &rows {
         let property = step.label;
-        let [min, median, mean, max] = statistics(durations);
+        let [min, median, mean, max] = calc_statistics_from_durations(durations);
         let mut line =
             format!("{property:<14}: {min:>13.3}   {median:>13.3}   {mean:>13.3}   {max:>13.3}");
         // The first lookup may miss the cache, so judge by the median.
@@ -484,13 +485,19 @@ mod tests {
 
     #[test]
     fn statistics_odd_count() {
-        let mut durations = [3, 1, 8].map(Duration::from_millis);
-        assert_eq!(statistics(&mut durations), [1.0, 3.0, 4.0, 8.0]);
+        let durations = [3, 1, 8].map(Duration::from_millis);
+        assert_eq!(
+            calc_statistics_from_durations(&durations),
+            [1.0, 3.0, 4.0, 8.0]
+        );
     }
 
     #[test]
     fn statistics_even_count() {
-        let mut durations = [4, 1, 2, 9].map(Duration::from_millis);
-        assert_eq!(statistics(&mut durations), [1.0, 3.0, 4.0, 9.0]);
+        let durations = [4, 1, 2, 9].map(Duration::from_millis);
+        assert_eq!(
+            calc_statistics_from_durations(&durations),
+            [1.0, 3.0, 4.0, 9.0]
+        );
     }
 }
