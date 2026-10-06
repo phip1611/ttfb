@@ -40,6 +40,10 @@ only change something for the binary.
 - `ProtocolSelection::Auto`, the default, selects HTTP/3, HTTP/2, or
   HTTP/1.1, whichever the server supports first in this order. Protocols built
   without their Cargo feature are skipped.
+- `TtfbOptions::ip_version` selects the IP version of the connection:
+  `IpVersion::Any`, the default, prefers IPv4 as before, while `IpVersion::V4`
+  and `IpVersion::V6` use only that version. A host without an address of that
+  version fails with the new `TtfbError::NoAddressForIpVersion`.
 - `TtfbOptions::timeout` limits the duration of a measurement, from the DNS
   lookup to the end of the download. It defaults to 10 s and must be between
   1 s and 60 min. A measurement that exceeds it fails with the new

@@ -171,6 +171,7 @@ fn main() {
         protocol,
         allow_insecure_certificates: input.allow_insecure_certificates,
         timeout: Duration::from_secs(input.timeout),
+        ..TtfbOptions::default()
     };
     if let Some(repeat) = input.repeat {
         let res = measure_repeatedly(options, &input.host, repeat);
