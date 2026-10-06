@@ -32,8 +32,8 @@ use std::process::exit;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 use ttfb::{
-    ConnectionHandshake, HttpProtocol, ProtocolSelection, TtfbClient, TtfbError, TtfbOptions,
-    TtfbOutcome,
+    ConnectionHandshake, DurationPair, HttpProtocol, ProtocolSelection, TtfbClient, TtfbError,
+    TtfbOptions, TtfbOutcome,
 };
 
 const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -239,32 +239,69 @@ fn print_title(ttfb: &TtfbOutcome) {
     println!("{:<14}: {}", "Status", ttfb.status());
 }
 
-/// Returns the relative duration of each step of the measurement, followed by
-/// the total duration.
-fn steps(ttfb: &TtfbOutcome) -> Vec<(&'static str, Duration)> {
-    let mut steps = Vec::new();
-    if let Some(dns_lookup) = ttfb.dns_lookup_duration() {
-        steps.push((DNS_LOOKUP_STEP, dns_lookup.relative()));
+/// A step of a measurement.
+#[derive(Debug)]
+struct Step {
+    /// The label in the table, e.g., "TCP Connect".
+    label: &'static str,
+    /// The duration of the step itself.
+    relative: Duration,
+}
+
+impl Step {
+    const fn new(label: &'static str, duration: DurationPair) -> Self {
+        Self {
+            label,
+            relative: duration.relative(),
+        }
     }
-    match ttfb.connection_handshake() {
-        ConnectionHandshake::Tcp { connect, tls } => {
-            steps.push((TCP_CONNECT_STEP, connect.relative()));
-            if let Some(tls) = tls {
-                steps.push((TLS_HANDSHAKE_STEP, tls.relative()));
+
+    /// Transforms a [`TtfbOutcome`] into the steps that the output reports.
+    ///
+    /// The steps are in the order in which they happened. Steps that didn't
+    /// happen, such as the TLS handshake for plain HTTP, are left out.
+    fn all(ttfb: &TtfbOutcome) -> Vec<Self> {
+        let mut steps = Vec::new();
+        if let Some(dns_lookup) = ttfb.dns_lookup_duration() {
+            steps.push(Self::new(DNS_LOOKUP_STEP, dns_lookup));
+        }
+        match ttfb.connection_handshake() {
+            ConnectionHandshake::Tcp { connect, tls } => {
+                steps.push(Self::new(TCP_CONNECT_STEP, connect));
+                if let Some(tls) = tls {
+                    steps.push(Self::new(TLS_HANDSHAKE_STEP, tls));
+                }
+            }
+            ConnectionHandshake::Quic(handshake) => {
+                steps.push(Self::new(QUIC_HANDSHAKE_STEP, handshake));
             }
         }
-        ConnectionHandshake::Quic(handshake) => {
-            steps.push((QUIC_HANDSHAKE_STEP, handshake.relative()));
+        steps.push(Self::new(HTTP_SEND_GET_STEP, ttfb.http_get_send_duration()));
+        steps.push(Self::new(TTFB_STEP, ttfb.ttfb_duration()));
+        let download = ttfb.http_content_download_duration();
+        steps.push(Self::new(HTTP_DOWNLOAD_STEP, download));
+        // The total is a step of its own, which spans the whole measurement.
+        steps.push(Self {
+            label: TOTAL_STEP,
+            relative: download.total(),
+        });
+        steps
+    }
+}
+
+/// Returns each step with its durations over all `outcomes`.
+fn step_durations(outcomes: &[TtfbOutcome]) -> Vec<(Step, Vec<Duration>)> {
+    // All measurements use the same protocol, so they have the same steps.
+    let mut rows: Vec<(Step, Vec<Duration>)> = Step::all(&outcomes[0])
+        .into_iter()
+        .map(|step| (step, Vec::new()))
+        .collect();
+    for outcome in outcomes {
+        for ((_, durations), step) in rows.iter_mut().zip(Step::all(outcome)) {
+            durations.push(step.relative);
         }
     }
-    steps.push((HTTP_SEND_GET_STEP, ttfb.http_get_send_duration().relative()));
-    steps.push((TTFB_STEP, ttfb.ttfb_duration().relative()));
-    steps.push((
-        HTTP_DOWNLOAD_STEP,
-        ttfb.http_content_download_duration().relative(),
-    ));
-    steps.push((TOTAL_STEP, ttfb.http_content_download_duration().total()));
-    steps
+    rows
 }
 
 /// Returns the minimum, median, mean, and maximum of `durations` in ms.
@@ -283,16 +320,7 @@ fn statistics(durations: &mut [Duration]) -> [f64; 4] {
 
 /// Prints the statistics of each step over all `outcomes`.
 fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
-    // All measurements use the same protocol, so they have the same steps.
-    let mut rows: Vec<(&str, Vec<Duration>)> = steps(&outcomes[0])
-        .into_iter()
-        .map(|(property, _)| (property, Vec::new()))
-        .collect();
-    for outcome in outcomes {
-        for ((_, durations), (_, duration)) in rows.iter_mut().zip(steps(outcome)) {
-            durations.push(duration);
-        }
-    }
+    let mut rows = step_durations(outcomes);
 
     stdout()
         .execute(SetAttribute(Attribute::Bold))
@@ -307,15 +335,16 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
         .execute(SetAttribute(Attribute::Reset))
         .map_err(|err| err.to_string())?;
 
-    for (property, durations) in &mut rows {
+    for (step, durations) in &mut rows {
+        let property = step.label;
         let [min, median, mean, max] = statistics(durations);
         let mut line =
             format!("{property:<14}: {min:>13.3}   {median:>13.3}   {mean:>13.3}   {max:>13.3}");
         // The first lookup may miss the cache, so judge by the median.
-        if *property == DNS_LOOKUP_STEP && median < DNS_CACHED_MS {
+        if property == DNS_LOOKUP_STEP && median < DNS_CACHED_MS {
             line.push_str("  (probably cached)");
         }
-        if *property == TTFB_STEP {
+        if property == TTFB_STEP {
             stdout()
                 .execute(SetAttribute(Attribute::Bold))
                 .map_err(|err| err.to_string())?;
