@@ -56,6 +56,8 @@ only change something for the binary.
 - Added `--repeat N` and `--repeat Ns`, which measure N times or repeatedly
   for N seconds and print the minimum, median, mean, and maximum of each
   step and of the total time.
+- Added `--timeout <SECS>`, the maximum duration of a measurement, which
+  defaults to 10 s and must be between 1 s and 3600 s.
 - The output shows the HTTP protocol and the download of the response.
 - The output labels "TCP connect" and "HTTP GET Req" are now "TCP Connect"
   and "HTTP Send GET".

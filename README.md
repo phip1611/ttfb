@@ -42,6 +42,10 @@ maximum of each step and of the total time. All measurements use the protocol of
 Example: `$ ttfb --repeat 10 https://phip1611.de` or
 `$ ttfb --repeat 5s https://phip1611.de`
 
+A measurement fails if it takes longer than 10 s. Use `--timeout <SECS>` to
+change this limit to between 1 s and 3600 s. With `--repeat`, it applies to
+each measurement.
+
 ## Usage Library
 The library exposes `TtfbClient`, which is configured with `TtfbOptions`:
 
