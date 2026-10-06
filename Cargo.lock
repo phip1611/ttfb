@@ -1741,6 +1741,7 @@ dependencies = [
 name = "ttfb"
 version = "2.0.0"
 dependencies = [
+ "bytes",
  "clap",
  "crossterm",
  "h2",
