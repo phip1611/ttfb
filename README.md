@@ -38,7 +38,8 @@ servers without HTTP/3, the HTTP/3 attempt usually waits for its timeout of
 
 With `--repeat N`, the CLI measures N times, and with `--repeat Ns`
 repeatedly for N seconds. Then, it prints the minimum, median, mean, and
-maximum of each step and of the total time. All measurements use the protocol of the first one. \
+maximum of the relative and the absolute duration of each step. All
+measurements use the protocol of the first one. \
 Example: `$ ttfb --repeat 10 https://phip1611.de` or
 `$ ttfb --repeat 5s https://phip1611.de`
 
@@ -109,8 +110,9 @@ HTTP Resp TTFB:          80.4            98.1
 HTTP Download :         295.3           393.5
 ```
 
-With `--repeat`, the output shows statistics of each step and of the total time
-instead:
+With `--repeat`, the output shows the statistics of each step instead: the
+absolute duration and, in parentheses, the relative duration, like the two
+columns above:
 ```text
 $ ttfb --repeat 2s https://phip1611.de
 TTFB for https://phip1611.de (by ttfb@v2.0.0)
@@ -119,13 +121,13 @@ Protocol      : HTTP/2 (selected automatically)
 Status        : 200 OK
 Measurements  : 19
 PROPERTY             MIN (ms)     MEDIAN (ms)       MEAN (ms)        MAX (ms)
-DNS Lookup    :           0.9             1.1             1.3             3.3  (probably cached)
-TCP Connect   :           6.7             7.8             8.0            12.5
-TLS Handshake :          12.8            14.6            14.7            16.0
-HTTP Send GET :           0.1             0.1             0.1             0.2
-HTTP Resp TTFB:          17.4            29.9            27.6            38.4
-HTTP Download :           0.0             0.0             0.0             0.0
-Total         :          38.9            53.6            51.7            62.8
+                  ABS (  REL)     ABS (  REL)     ABS (  REL)     ABS (  REL)
+DNS Lookup    :   0.8 (  0.8)     0.9 (  0.9)     1.0 (  1.0)     1.7 (  1.7)  (probably cached)
+TCP Connect   :   8.1 (  7.2)     8.9 (  8.0)     9.2 (  8.2)    13.0 ( 11.9)
+TLS Handshake :  22.6 ( 14.1)    24.5 ( 15.1)    24.5 ( 15.3)    29.2 ( 17.0)
+HTTP Send GET :  22.7 (  0.1)    24.6 (  0.1)    24.7 (  0.1)    29.3 (  0.2)
+HTTP Resp TTFB:  41.6 ( 18.5)    49.1 ( 23.8)    50.6 ( 26.0)    91.3 ( 62.0)
+HTTP Download :  41.6 (  0.0)    49.1 (  0.0)    50.6 (  0.0)    91.3 (  0.0)
 ```
 
 ## MSRV

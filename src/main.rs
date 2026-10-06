@@ -24,6 +24,7 @@
 use clap::Parser;
 use crossterm::ExecutableCommand;
 use crossterm::style::{Attribute, SetAttribute};
+use std::array;
 use std::fmt::{self, Display, Formatter};
 use std::io::stdout;
 use std::net::SocketAddr;
@@ -49,7 +50,6 @@ const QUIC_HANDSHAKE_STEP: &str = "QUIC Handshake";
 const HTTP_SEND_GET_STEP: &str = "HTTP Send GET";
 const TTFB_STEP: &str = "HTTP Resp TTFB";
 const HTTP_DOWNLOAD_STEP: &str = "HTTP Download";
-const TOTAL_STEP: &str = "Total";
 
 macro_rules! unwrap_or_exit {
     ($ident:ident) => {
@@ -246,6 +246,8 @@ struct Step {
     label: &'static str,
     /// The duration of the step itself.
     relative: Duration,
+    /// The duration from the start of the measurement to the end of the step.
+    absolute: Duration,
 }
 
 impl Step {
@@ -253,6 +255,7 @@ impl Step {
         Self {
             label,
             relative: duration.relative(),
+            absolute: duration.total(),
         }
     }
 
@@ -280,17 +283,16 @@ impl Step {
         steps.push(Self::new(TTFB_STEP, ttfb.ttfb_duration()));
         let download = ttfb.http_content_download_duration();
         steps.push(Self::new(HTTP_DOWNLOAD_STEP, download));
-        // The total is a step of its own, which spans the whole measurement.
-        steps.push(Self {
-            label: TOTAL_STEP,
-            relative: download.total(),
-        });
         steps
     }
 }
 
-/// Returns each step with its durations over all `outcomes`.
-fn step_durations(outcomes: &[TtfbOutcome]) -> Vec<(Step, Vec<Duration>)> {
+/// Returns each step with its durations over all `outcomes`, as extracted by
+/// `extract_duration`.
+fn step_durations(
+    outcomes: &[TtfbOutcome],
+    extract_duration: fn(&Step) -> Duration,
+) -> Vec<(Step, Vec<Duration>)> {
     // All measurements use the same protocol, so they have the same steps.
     let mut rows: Vec<(Step, Vec<Duration>)> = Step::all(&outcomes[0])
         .into_iter()
@@ -298,7 +300,7 @@ fn step_durations(outcomes: &[TtfbOutcome]) -> Vec<(Step, Vec<Duration>)> {
         .collect();
     for outcome in outcomes {
         for ((_, durations), step) in rows.iter_mut().zip(Step::all(outcome)) {
-            durations.push(step.relative);
+            durations.push(extract_duration(&step));
         }
     }
     rows
@@ -321,31 +323,69 @@ fn calc_statistics_from_durations(durations: &[Duration]) -> [f64; 4] {
 
 /// Prints the statistics of each step over all `outcomes`.
 fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
-    let rows = step_durations(outcomes);
+    let steps_to_rel_durations_vec = step_durations(outcomes, |step| step.relative);
+    let steps_to_abs_durations_vec = step_durations(outcomes, |step| step.absolute);
+    // Each row: (step, [min, median, mean, max] of ABS, ... of REL), in ms.
+    let steps_to_stats = steps_to_rel_durations_vec
+        .into_iter()
+        .zip(steps_to_abs_durations_vec)
+        .map(|((step, rel_durations), (_, abs_durations))| {
+            (
+                step,
+                calc_statistics_from_durations(&abs_durations),
+                calc_statistics_from_durations(&rel_durations),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    // Pad the durations to the width of 999.9, so the decimal points line up.
+    let fmt_cell =
+        |absolute: &dyn Display, relative: &dyn Display| format!("{absolute:>5} ({relative:>5})");
+    let column_headers = ["MIN (ms)", "MEDIAN (ms)", "MEAN (ms)", "MAX (ms)"];
+    // The sub-header is as wide as every cell.
+    let sub_header = fmt_cell(&"ABS", &"REL");
+    let max_header_width = column_headers
+        .iter()
+        .map(|header| header.len())
+        .max()
+        .expect("should have headers");
+    let column_width = max_header_width.max(sub_header.len());
+    // A row with a label and four right-aligned cells.
+    let fmt_row = |label: &str, cells: [&str; 4]| {
+        let padded_cells = cells.map(|cell| format!("{cell:>column_width$}"));
+        // 16: the longest step label (14), the colon, and a space.
+        format!("{label:<16}{}", padded_cells.join("   "))
+    };
 
     stdout()
         .execute(SetAttribute(Attribute::Bold))
         .map_err(|err| err.to_string())?;
     print_title(&outcomes[0]);
     println!("{:<14}: {}", "Measurements", outcomes.len());
-    println!(
-        "{:<16}{:>13}   {:>13}   {:>13}   {:>13}",
-        "PROPERTY", "MIN (ms)", "MEDIAN (ms)", "MEAN (ms)", "MAX (ms)"
-    );
+    println!("{}", fmt_row("PROPERTY", column_headers));
+    println!("{}", fmt_row("", [sub_header.as_str(); 4]));
     stdout()
         .execute(SetAttribute(Attribute::Reset))
         .map_err(|err| err.to_string())?;
 
-    for (step, durations) in &rows {
-        let property = step.label;
-        let [min, median, mean, max] = calc_statistics_from_durations(durations);
-        let mut line =
-            format!("{property:<14}: {min:>13.1}   {median:>13.1}   {mean:>13.1}   {max:>13.1}");
+    for (step, abs_stats, rel_stats) in steps_to_stats {
+        let label = step.label;
+        let [_, rel_median, _, _] = rel_stats;
+        let cells: [String; 4] = array::from_fn(|i| {
+            fmt_cell(
+                &format!("{:.1}", abs_stats[i]),
+                &format!("{:.1}", rel_stats[i]),
+            )
+        });
+        let mut line = fmt_row(
+            &format!("{label:<14}:"),
+            cells.each_ref().map(String::as_str),
+        );
         // The first lookup may miss the cache, so judge by the median.
-        if property == DNS_LOOKUP_STEP && median < DNS_CACHED_MS {
+        if label == DNS_LOOKUP_STEP && rel_median < DNS_CACHED_MS {
             line.push_str("  (probably cached)");
         }
-        if property == TTFB_STEP {
+        if label == TTFB_STEP {
             stdout()
                 .execute(SetAttribute(Attribute::Bold))
                 .map_err(|err| err.to_string())?;

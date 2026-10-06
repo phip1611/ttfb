@@ -57,8 +57,8 @@ only change something for the binary.
 - Added `--http1.1`, `--http2`, `--http3`, and `--auto-protocol` to select
   the HTTP protocol.
 - Added `--repeat N` and `--repeat Ns`, which measure N times or repeatedly
-  for N seconds and print the minimum, median, mean, and maximum of each
-  step and of the total time.
+  for N seconds and print the minimum, median, mean, and maximum of the
+  relative and the absolute duration of each step.
 - Added `--timeout <SECS>`, the maximum duration of a measurement, which
   defaults to 10 s and must be between 1 s and 3600 s.
 - Added `--headers`, which prints the status line and the headers of the
