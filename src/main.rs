@@ -340,7 +340,7 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
         let property = step.label;
         let [min, median, mean, max] = calc_statistics_from_durations(durations);
         let mut line =
-            format!("{property:<14}: {min:>13.3}   {median:>13.3}   {mean:>13.3}   {max:>13.3}");
+            format!("{property:<14}: {min:>13.1}   {median:>13.1}   {mean:>13.1}   {max:>13.1}");
         // The first lookup may miss the cache, so judge by the median.
         if property == DNS_LOOKUP_STEP && median < DNS_CACHED_MS {
             line.push_str("  (probably cached)");
@@ -392,7 +392,7 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         // For DNS, abs and rel time is the same (because it happens first).
         let duration = duration_pair.relative().as_secs_f64() * 1000.0;
         print!(
-            "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
+            "{property:<14}: {rel_time:>13.1}   {abs_time:>13.1}",
             property = DNS_LOOKUP_STEP,
             rel_time = duration,
             abs_time = duration,
@@ -405,14 +405,14 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
     match ttfb.connection_handshake() {
         ConnectionHandshake::Tcp { connect, tls } => {
             println!(
-                "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
+                "{property:<14}: {rel_time:>13.1}   {abs_time:>13.1}",
                 property = TCP_CONNECT_STEP,
                 rel_time = connect.relative().as_secs_f64() * 1000.0,
                 abs_time = connect.total().as_secs_f64() * 1000.0,
             );
             if let Some(tls) = tls {
                 println!(
-                    "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
+                    "{property:<14}: {rel_time:>13.1}   {abs_time:>13.1}",
                     property = TLS_HANDSHAKE_STEP,
                     rel_time = tls.relative().as_secs_f64() * 1000.0,
                     abs_time = tls.total().as_secs_f64() * 1000.0,
@@ -421,7 +421,7 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         }
         ConnectionHandshake::Quic(handshake) => {
             println!(
-                "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
+                "{property:<14}: {rel_time:>13.1}   {abs_time:>13.1}",
                 property = QUIC_HANDSHAKE_STEP,
                 rel_time = handshake.relative().as_secs_f64() * 1000.0,
                 abs_time = handshake.total().as_secs_f64() * 1000.0,
@@ -429,7 +429,7 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         }
     }
     println!(
-        "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
+        "{property:<14}: {rel_time:>13.1}   {abs_time:>13.1}",
         property = HTTP_SEND_GET_STEP,
         rel_time = ttfb.http_get_send_duration().relative().as_secs_f64() * 1000.0,
         abs_time = ttfb.http_get_send_duration().total().as_secs_f64() * 1000.0,
@@ -439,13 +439,13 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         .execute(SetAttribute(Attribute::Bold))
         .map_err(|err| err.to_string())?;
     println!(
-        "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
+        "{property:<14}: {rel_time:>13.1}   {abs_time:>13.1}",
         property = TTFB_STEP,
         rel_time = ttfb.ttfb_duration().relative().as_secs_f64() * 1000.0,
         abs_time = ttfb.ttfb_duration().total().as_secs_f64() * 1000.0,
     );
     println!(
-        "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
+        "{property:<14}: {rel_time:>13.1}   {abs_time:>13.1}",
         property = HTTP_DOWNLOAD_STEP,
         rel_time = ttfb
             .http_content_download_duration()

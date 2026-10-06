@@ -87,12 +87,12 @@ Address       : 85.13.155.159:443
 Protocol      : HTTP/2 (selected automatically)
 Status        : 200 OK
 PROPERTY        REL TIME (ms)   ABS TIME (ms)
-DNS Lookup    :         1.110           1.110  (probably cached)
-TCP Connect   :         8.025           9.135
-TLS Handshake :        15.345          24.480
-HTTP Send GET :         0.113          24.593
-HTTP Resp TTFB:        32.127          56.720
-HTTP Download :         0.013          56.733
+DNS Lookup    :           1.1             1.1  (probably cached)
+TCP Connect   :           8.0             9.1
+TLS Handshake :          15.3            24.5
+HTTP Send GET :           0.1            24.6
+HTTP Resp TTFB:          32.1            56.7
+HTTP Download :           0.0            56.7
 ```
 
 For HTTP/3, the QUIC handshake replaces the TCP connect and the TLS handshake:
@@ -102,11 +102,11 @@ Address       : 104.16.124.96:443
 Protocol      : HTTP/3 (selected automatically)
 Status        : 200 OK
 PROPERTY        REL TIME (ms)   ABS TIME (ms)
-DNS Lookup    :         1.070           1.070  (probably cached)
-QUIC Handshake:        16.562          17.632
-HTTP Send GET :         0.052          17.684
-HTTP Resp TTFB:        80.432          98.116
-HTTP Download :       295.336         393.452
+DNS Lookup    :           1.1             1.1  (probably cached)
+QUIC Handshake:          16.6            17.6
+HTTP Send GET :           0.1            17.7
+HTTP Resp TTFB:          80.4            98.1
+HTTP Download :         295.3           393.5
 ```
 
 With `--repeat`, the output shows statistics of each step and of the total time
@@ -119,13 +119,13 @@ Protocol      : HTTP/2 (selected automatically)
 Status        : 200 OK
 Measurements  : 19
 PROPERTY             MIN (ms)     MEDIAN (ms)       MEAN (ms)        MAX (ms)
-DNS Lookup    :         0.932           1.086           1.310           3.289  (probably cached)
-TCP Connect   :         6.724           7.848           7.969          12.479
-TLS Handshake :        12.806          14.625          14.691          15.991
-HTTP Send GET :         0.069           0.087           0.102           0.182
-HTTP Resp TTFB:        17.393          29.861          27.645          38.382
-HTTP Download :         0.007           0.012           0.012           0.018
-Total         :        38.906          53.604          51.729          62.751
+DNS Lookup    :           0.9             1.1             1.3             3.3  (probably cached)
+TCP Connect   :           6.7             7.8             8.0            12.5
+TLS Handshake :          12.8            14.6            14.7            16.0
+HTTP Send GET :           0.1             0.1             0.1             0.2
+HTTP Resp TTFB:          17.4            29.9            27.6            38.4
+HTTP Download :           0.0             0.0             0.0             0.0
+Total         :          38.9            53.6            51.7            62.8
 ```
 
 ## MSRV

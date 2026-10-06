@@ -63,6 +63,8 @@ only change something for the binary.
   defaults to 10 s and must be between 1 s and 3600 s.
 - Added `--headers`, which prints the status line and the headers of the
   response.
+- The tables show the timings in ms with one decimal. More decimals only
+  showed measurement noise.
 - The output shows the IP address and port, the HTTP protocol, the status, and
   the download of the response.
 - The output labels "TCP connect" and "HTTP GET Req" are now "TCP Connect"
