@@ -321,6 +321,17 @@ fn calc_statistics_from_durations(durations: &[Duration]) -> [f64; 4] {
     [ms(durations[0]), median, mean, ms(durations[len - 1])]
 }
 
+/// Returns the width of the widest of `values` in the table, but at least that
+/// of 999.9, so typical tables keep their layout.
+fn calc_max_width(values: impl IntoIterator<Item = f64>) -> usize {
+    values
+        .into_iter()
+        .map(|value| format!("{value:.1}").len())
+        .max()
+        .unwrap_or(0)
+        .max("999.9".len())
+}
+
 /// Prints the statistics of each step over all `outcomes`.
 fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
     let steps_to_rel_durations_vec = step_durations(outcomes, |step| step.relative);
@@ -338,9 +349,21 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
         })
         .collect::<Vec<_>>();
 
-    // Pad the durations to the width of 999.9, so the decimal points line up.
-    let fmt_cell =
-        |absolute: &dyn Display, relative: &dyn Display| format!("{absolute:>5} ({relative:>5})");
+    // Pad the absolute and the relative durations each to the widest one, so
+    // the decimal points line up.
+    let abs_width = calc_max_width(
+        steps_to_stats
+            .iter()
+            .flat_map(|(_, abs_stats, _)| *abs_stats),
+    );
+    let rel_width = calc_max_width(
+        steps_to_stats
+            .iter()
+            .flat_map(|(_, _, rel_stats)| *rel_stats),
+    );
+    let fmt_cell = |absolute: &dyn Display, relative: &dyn Display| {
+        format!("{absolute:>abs_width$} ({relative:>rel_width$})")
+    };
     let column_headers = ["MIN (ms)", "MEDIAN (ms)", "MEAN (ms)", "MAX (ms)"];
     // The sub-header is as wide as every cell.
     let sub_header = fmt_cell(&"ABS", &"REL");
