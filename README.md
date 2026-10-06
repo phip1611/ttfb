@@ -93,7 +93,7 @@ TCP Connect   :           8.0             9.1
 TLS Handshake :          15.3            24.5
 HTTP Send GET :           0.1            24.6
 HTTP Resp TTFB:          32.1            56.7
-HTTP Download :           0.0            56.7
+HTTP Download :          <0.1            56.7
 ```
 
 For HTTP/3, the QUIC handshake replaces the TCP connect and the TLS handshake:
@@ -127,7 +127,7 @@ TCP Connect   :   8.1 (  7.2)     8.9 (  8.0)     9.2 (  8.2)    13.0 ( 11.9)
 TLS Handshake :  22.6 ( 14.1)    24.5 ( 15.1)    24.5 ( 15.3)    29.2 ( 17.0)
 HTTP Send GET :  22.7 (  0.1)    24.6 (  0.1)    24.7 (  0.1)    29.3 (  0.2)
 HTTP Resp TTFB:  41.6 ( 18.5)    49.1 ( 23.8)    50.6 ( 26.0)    91.3 ( 62.0)
-HTTP Download :  41.6 (  0.0)    49.1 (  0.0)    50.6 (  0.0)    91.3 (  0.0)
+HTTP Download :  41.6 ( <0.1)    49.1 ( <0.1)    50.6 ( <0.1)    91.3 ( <0.1)
 ```
 
 ## MSRV

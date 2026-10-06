@@ -64,7 +64,7 @@ only change something for the binary.
 - Added `--headers`, which prints the status line and the headers of the
   response.
 - The tables show the timings in ms with one decimal. More decimals only
-  showed measurement noise.
+  showed measurement noise. Durations below 0.05 ms are shown as `<0.1`.
 - The output shows the IP address and port, the HTTP protocol, the status, and
   the download of the response.
 - The output labels "TCP connect" and "HTTP GET Req" are now "TCP Connect"

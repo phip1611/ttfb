@@ -306,6 +306,16 @@ fn step_durations(
     rows
 }
 
+/// Formats `ms` with one decimal. Durations that would round to 0.0 are shown
+/// as <0.1, as they are short but not zero.
+fn format_ms(ms: f64) -> String {
+    if ms < 0.05 {
+        "<0.1".to_string()
+    } else {
+        format!("{ms:.1}")
+    }
+}
+
 /// Returns the minimum, median, mean, and maximum of `durations` in ms.
 fn calc_statistics_from_durations(durations: &[Duration]) -> [f64; 4] {
     let mut durations = durations.to_vec();
@@ -326,7 +336,7 @@ fn calc_statistics_from_durations(durations: &[Duration]) -> [f64; 4] {
 fn calc_max_width(values: impl IntoIterator<Item = f64>) -> usize {
     values
         .into_iter()
-        .map(|value| format!("{value:.1}").len())
+        .map(|value| format_ms(value).len())
         .max()
         .unwrap_or(0)
         .max("999.9".len())
@@ -394,12 +404,8 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
     for (step, abs_stats, rel_stats) in steps_to_stats {
         let label = step.label;
         let [_, rel_median, _, _] = rel_stats;
-        let cells: [String; 4] = array::from_fn(|i| {
-            fmt_cell(
-                &format!("{:.1}", abs_stats[i]),
-                &format!("{:.1}", rel_stats[i]),
-            )
-        });
+        let cells: [String; 4] =
+            array::from_fn(|i| fmt_cell(&format_ms(abs_stats[i]), &format_ms(rel_stats[i])));
         let mut line = fmt_row(
             &format!("{label:<14}:"),
             cells.each_ref().map(String::as_str),
@@ -455,10 +461,10 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         // For DNS, abs and rel time is the same (because it happens first).
         let duration = duration_pair.relative().as_secs_f64() * 1000.0;
         print!(
-            "{property:<14}: {rel_time:>13.1}   {abs_time:>13.1}",
+            "{property:<14}: {rel_time:>13}   {abs_time:>13}",
             property = DNS_LOOKUP_STEP,
-            rel_time = duration,
-            abs_time = duration,
+            rel_time = format_ms(duration),
+            abs_time = format_ms(duration),
         );
         if duration < DNS_CACHED_MS {
             print!("  (probably cached)");
@@ -468,54 +474,55 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
     match ttfb.connection_handshake() {
         ConnectionHandshake::Tcp { connect, tls } => {
             println!(
-                "{property:<14}: {rel_time:>13.1}   {abs_time:>13.1}",
+                "{property:<14}: {rel_time:>13}   {abs_time:>13}",
                 property = TCP_CONNECT_STEP,
-                rel_time = connect.relative().as_secs_f64() * 1000.0,
-                abs_time = connect.total().as_secs_f64() * 1000.0,
+                rel_time = format_ms(connect.relative().as_secs_f64() * 1000.0),
+                abs_time = format_ms(connect.total().as_secs_f64() * 1000.0),
             );
             if let Some(tls) = tls {
                 println!(
-                    "{property:<14}: {rel_time:>13.1}   {abs_time:>13.1}",
+                    "{property:<14}: {rel_time:>13}   {abs_time:>13}",
                     property = TLS_HANDSHAKE_STEP,
-                    rel_time = tls.relative().as_secs_f64() * 1000.0,
-                    abs_time = tls.total().as_secs_f64() * 1000.0,
+                    rel_time = format_ms(tls.relative().as_secs_f64() * 1000.0),
+                    abs_time = format_ms(tls.total().as_secs_f64() * 1000.0),
                 );
             }
         }
         ConnectionHandshake::Quic(handshake) => {
             println!(
-                "{property:<14}: {rel_time:>13.1}   {abs_time:>13.1}",
+                "{property:<14}: {rel_time:>13}   {abs_time:>13}",
                 property = QUIC_HANDSHAKE_STEP,
-                rel_time = handshake.relative().as_secs_f64() * 1000.0,
-                abs_time = handshake.total().as_secs_f64() * 1000.0,
+                rel_time = format_ms(handshake.relative().as_secs_f64() * 1000.0),
+                abs_time = format_ms(handshake.total().as_secs_f64() * 1000.0),
             );
         }
     }
     println!(
-        "{property:<14}: {rel_time:>13.1}   {abs_time:>13.1}",
+        "{property:<14}: {rel_time:>13}   {abs_time:>13}",
         property = HTTP_SEND_GET_STEP,
-        rel_time = ttfb.http_get_send_duration().relative().as_secs_f64() * 1000.0,
-        abs_time = ttfb.http_get_send_duration().total().as_secs_f64() * 1000.0,
+        rel_time = format_ms(ttfb.http_get_send_duration().relative().as_secs_f64() * 1000.0),
+        abs_time = format_ms(ttfb.http_get_send_duration().total().as_secs_f64() * 1000.0),
     );
 
     stdout()
         .execute(SetAttribute(Attribute::Bold))
         .map_err(|err| err.to_string())?;
     println!(
-        "{property:<14}: {rel_time:>13.1}   {abs_time:>13.1}",
+        "{property:<14}: {rel_time:>13}   {abs_time:>13}",
         property = TTFB_STEP,
-        rel_time = ttfb.ttfb_duration().relative().as_secs_f64() * 1000.0,
-        abs_time = ttfb.ttfb_duration().total().as_secs_f64() * 1000.0,
+        rel_time = format_ms(ttfb.ttfb_duration().relative().as_secs_f64() * 1000.0),
+        abs_time = format_ms(ttfb.ttfb_duration().total().as_secs_f64() * 1000.0),
     );
     println!(
-        "{property:<14}: {rel_time:>13.1}   {abs_time:>13.1}",
+        "{property:<14}: {rel_time:>13}   {abs_time:>13}",
         property = HTTP_DOWNLOAD_STEP,
-        rel_time = ttfb
-            .http_content_download_duration()
-            .relative()
-            .as_secs_f64()
-            * 1000.0,
-        abs_time = ttfb.http_content_download_duration().total().as_secs_f64() * 1000.0,
+        rel_time = format_ms(
+            ttfb.http_content_download_duration()
+                .relative()
+                .as_secs_f64()
+                * 1000.0
+        ),
+        abs_time = format_ms(ttfb.http_content_download_duration().total().as_secs_f64() * 1000.0),
     );
     stdout()
         .execute(SetAttribute(Attribute::Reset))
@@ -544,6 +551,14 @@ mod tests {
         for invalid in ["", "0", "0s", "s", "-1", "1.5s", "5m", "5 s"] {
             assert!(invalid.parse::<RepeatInput>().is_err(), "{invalid}");
         }
+    }
+
+    #[test]
+    fn format_ms_shows_short_durations_as_less_than_0_1() {
+        assert_eq!(format_ms(0.0), "<0.1");
+        assert_eq!(format_ms(0.049), "<0.1");
+        assert_eq!(format_ms(0.05), "0.1");
+        assert_eq!(format_ms(12.34), "12.3");
     }
 
     #[test]
