@@ -2,7 +2,7 @@
 
 //! HTTP/2 measurements over TLS.
 
-use crate::outcome::{Connect, TtfbTimings};
+use crate::outcome::{Connect, ResponseHead, TtfbTimings};
 use crate::target::Target;
 use crate::{HttpProtocol, TtfbError, TtfbOutcome, build_http_request, tls};
 use h2::client::Builder;
@@ -76,10 +76,12 @@ async fn download_body(mut body: h2::RecvStream) -> Result<(), TtfbError> {
 /// includes their transmission.
 ///
 /// HTTP/2 is only supported over TLS (`https://`).
+///
+/// Also returns the head of the response.
 pub async fn measure(
     target: &Target,
     tls_config: Arc<ClientConfig>,
-) -> Result<TtfbOutcome, TtfbError> {
+) -> Result<(TtfbOutcome, ResponseHead), TtfbError> {
     if target.url.scheme() != "https" {
         return Err(TtfbError::UnsupportedHttpProtocol(
             "HTTP/2 requires an HTTPS URL".into(),
@@ -126,14 +128,16 @@ pub async fn measure(
         (response, begin.elapsed())
     };
 
+    let (head, body) = response.into_parts();
+
     // Download the body.
     let download_duration = {
         let begin = Instant::now();
-        download_body(response.into_body()).await?;
+        download_body(body).await?;
         begin.elapsed()
     };
 
-    Ok(TtfbOutcome::new(
+    let outcome = TtfbOutcome::new(
         target.input.clone(),
         target.address,
         target.port,
@@ -148,7 +152,12 @@ pub async fn measure(
             http_content_download: download_duration,
         },
         HttpProtocol::Http2,
-    ))
+    );
+    let head = ResponseHead {
+        status: head.status,
+        headers: head.headers,
+    };
+    Ok((outcome, head))
 }
 
 #[cfg(test)]

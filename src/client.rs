@@ -97,6 +97,7 @@ impl TtfbClient {
     #[cfg(feature = "http2")]
     fn measure_http2(&self, target: &Target, deadline: Deadline) -> Result<TtfbOutcome, TtfbError> {
         run_in_tokio(deadline.run(http2::measure(target, Arc::clone(&self.tls_config))))
+            .map(|(outcome, _)| outcome)
     }
 
     /// Fails, as the crate was built without the `http2` feature.
