@@ -37,7 +37,7 @@ bin = ["dep:clap", "dep:crossterm"]
 # HTTP/2 measurements with h2 over tokio-rustls.
 http2 = ["dep:h2", "dep:tokio-rustls", "tokio/net"]
 # HTTP/3 measurements with h3 over quinn.
-http3 = ["dep:bytes", "dep:h3", "dep:h3-quinn", "dep:quinn", "tokio/time"]
+http3 = ["dep:bytes", "dep:h3", "dep:h3-quinn", "dep:quinn"]
 
 [dependencies]
 # +++ LIBRARY +++
@@ -95,6 +95,7 @@ version = "1.50.0"
 default-features = false
 features = [
   "rt",
+  "time",
 ]
 
 [lints.rust]
