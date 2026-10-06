@@ -6,11 +6,14 @@ use crate::outcome::{Connect, TtfbTimings};
 use crate::target::Target;
 use crate::{HttpProtocol, TtfbError, TtfbOutcome, build_http_request, tls};
 use bytes::Bytes;
+use h3::client as h3_client;
+use quinn::crypto::rustls::QuicClientConfig;
 use rustls::ClientConfig;
 use std::fmt::Display;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::time::timeout;
 
 /// The maximum time to establish the QUIC connection. Networks may drop UDP
 /// silently, and a server without HTTP/3 doesn't answer at all.
@@ -32,7 +35,7 @@ fn create_endpoint(
 ) -> Result<quinn::Endpoint, TtfbError> {
     let mut crypto = tls_config.clone();
     crypto.alpn_protocols = vec![b"h3".to_vec()];
-    let crypto = quinn::crypto::rustls::QuicClientConfig::try_from(crypto).map_err(unavailable)?;
+    let crypto = QuicClientConfig::try_from(crypto).map_err(unavailable)?;
 
     // The local socket must belong to the address family of the target.
     let local_address: SocketAddr = if target.address.is_ipv6() {
@@ -54,7 +57,7 @@ async fn connect(
     let connecting = endpoint
         .connect((target.address, target.port).into(), &server_name.to_str())
         .map_err(unavailable)?;
-    tokio::time::timeout(CONNECT_TIMEOUT, connecting)
+    timeout(CONNECT_TIMEOUT, connecting)
         .await
         .map_err(|_| unavailable("the connection attempt timed out"))?
         .map_err(unavailable)
@@ -86,7 +89,7 @@ pub async fn measure(
     // The driver drives the HTTP/3 connection in the background. GREASE is
     // disabled, as some servers reset the request when they receive a GREASE
     // frame on the request stream.
-    let (mut driver, mut sender) = h3::client::builder()
+    let (mut driver, mut sender) = h3_client::builder()
         .send_grease(false)
         .build::<_, _, Bytes>(h3_quinn::Connection::new(connection))
         .await

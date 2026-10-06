@@ -5,6 +5,7 @@
 use crate::TtfbError;
 use rustls::client::Resumption;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::crypto::ring;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, Error, RootCertStore, SignatureScheme};
 use std::net::IpAddr;
@@ -18,10 +19,9 @@ use url::{Host, Url};
 /// system's root certificates and the bundled Mozilla root certificates are
 /// trusted.
 pub fn config(allow_insecure_certificates: bool) -> Arc<ClientConfig> {
-    let builder =
-        ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-            .with_safe_default_protocol_versions()
-            .expect("ring should support the default protocol versions");
+    let builder = ClientConfig::builder_with_provider(Arc::new(ring::default_provider()))
+        .with_safe_default_protocol_versions()
+        .expect("ring should support the default protocol versions");
     let builder = if allow_insecure_certificates {
         builder
             .dangerous()
