@@ -110,6 +110,22 @@ jobs:
         timeout-minutes: 2
         run: cargo test -- network_tests
 
+  # Checks the format of the JSON output, as scripts depend on it.
+  json_output:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --features bin
+      - name: Check the JSON output
+        timeout-minutes: 2
+        run: ./check-json-output.sh
+
   style_checks:
     runs-on: ubuntu-latest
     steps:
