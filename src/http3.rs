@@ -2,7 +2,7 @@
 
 //! HTTP/3 measurements over QUIC.
 
-use crate::outcome::{Connect, TtfbTimings};
+use crate::outcome::{Connect, ResponseHead, TtfbTimings};
 use crate::target::Target;
 use crate::{HttpProtocol, TtfbError, TtfbOutcome, build_http_request, tls};
 use bytes::Bytes;
@@ -68,10 +68,12 @@ async fn connect(
 /// the download of the body.
 ///
 /// HTTP/3 is only supported over TLS (`https://`).
+///
+/// Also returns the head of the response.
 pub async fn measure(
     target: &Target,
     tls_config: Arc<ClientConfig>,
-) -> Result<TtfbOutcome, TtfbError> {
+) -> Result<(TtfbOutcome, ResponseHead), TtfbError> {
     if target.url.scheme() != "https" {
         return Err(TtfbError::UnsupportedHttpProtocol(
             "HTTP/3 requires an HTTPS URL".into(),
@@ -108,10 +110,10 @@ pub async fn measure(
     };
 
     // Wait for the response headers.
-    let ttfb_duration = {
+    let (head, ttfb_duration) = {
         let begin = Instant::now();
-        stream.recv_response().await.map_err(http3_error)?;
-        begin.elapsed()
+        let response = stream.recv_response().await.map_err(http3_error)?;
+        (response.into_parts().0, begin.elapsed())
     };
 
     // Download the body.
@@ -121,7 +123,7 @@ pub async fn measure(
         begin.elapsed()
     };
 
-    Ok(TtfbOutcome::new(
+    let outcome = TtfbOutcome::new(
         target.input.clone(),
         target.address,
         target.port,
@@ -133,7 +135,12 @@ pub async fn measure(
             http_content_download: download_duration,
         },
         HttpProtocol::Http3,
-    ))
+    );
+    let head = ResponseHead {
+        status: head.status,
+        headers: head.headers,
+    };
+    Ok((outcome, head))
 }
 
 #[cfg(test)]
