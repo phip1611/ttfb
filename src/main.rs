@@ -59,13 +59,34 @@ struct TtfbArgs {
     /// Similar to `-k` of `curl`.
     #[arg(short = 'k', long = "insecure")]
     allow_insecure_certificates: bool,
+    /// Require HTTP/1.1.
+    #[arg(long = "http1.1", conflicts_with_all = ["http2", "http3", "auto_protocol"])]
+    http11: bool,
+    /// Require HTTP/2.
+    #[arg(long, conflicts_with_all = ["http11", "http3", "auto_protocol"])]
+    http2: bool,
+    /// Require HTTP/3.
+    #[arg(long, conflicts_with_all = ["http11", "http2", "auto_protocol"])]
+    http3: bool,
+    /// Automatically choose the best supported HTTP protocol.
+    #[arg(long, conflicts_with_all = ["http11", "http2", "http3"])]
+    auto_protocol: bool,
 }
 
 /// Small CLI binary wrapper around the [`ttfb`] lib.
 fn main() {
     let input: TtfbArgs = TtfbArgs::parse();
+    let protocol = if input.http11 {
+        ProtocolSelection::Only(HttpProtocol::Http11)
+    } else if input.http2 {
+        ProtocolSelection::Only(HttpProtocol::Http2)
+    } else if input.http3 {
+        ProtocolSelection::Only(HttpProtocol::Http3)
+    } else {
+        ProtocolSelection::Auto
+    };
     let client = TtfbClient::new(TtfbOptions {
-        protocol: ProtocolSelection::Only(HttpProtocol::Http11),
+        protocol,
         allow_insecure_certificates: input.allow_insecure_certificates,
     });
     let res = client.measure(input.host);
@@ -92,10 +113,16 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         url = ttfb.user_input(),
         crate_version = CRATE_VERSION
     );
+    let selection = match ttfb.protocol_selection() {
+        ProtocolSelection::Auto => " (selected automatically)",
+        ProtocolSelection::Only(_) => "",
+    };
+    println!("Protocol: {}{selection}", ttfb.protocol());
     println!("PROPERTY        REL TIME (ms)   ABS TIME (ms)");
     stdout()
         .execute(SetAttribute(Attribute::Reset))
         .map_err(|err| err.to_string())?;
+
     if let Some(duration_pair) = ttfb.dns_lookup_duration() {
         // For DNS, abs and rel time is the same (because it happens first).
         let duration = duration_pair.relative().as_secs_f64() * 1000.0;
@@ -110,19 +137,29 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         }
         println!();
     }
-    if let ConnectionHandshake::Tcp { connect, tls } = ttfb.connection_handshake() {
-        println!(
-            "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
-            property = "TCP connect",
-            rel_time = connect.relative().as_secs_f64() * 1000.0,
-            abs_time = connect.total().as_secs_f64() * 1000.0,
-        );
-        if let Some(tls) = tls {
+    match ttfb.connection_handshake() {
+        ConnectionHandshake::Tcp { connect, tls } => {
             println!(
                 "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
-                property = "TLS Handshake",
-                rel_time = tls.relative().as_secs_f64() * 1000.0,
-                abs_time = tls.total().as_secs_f64() * 1000.0,
+                property = "TCP connect",
+                rel_time = connect.relative().as_secs_f64() * 1000.0,
+                abs_time = connect.total().as_secs_f64() * 1000.0,
+            );
+            if let Some(tls) = tls {
+                println!(
+                    "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
+                    property = "TLS Handshake",
+                    rel_time = tls.relative().as_secs_f64() * 1000.0,
+                    abs_time = tls.total().as_secs_f64() * 1000.0,
+                );
+            }
+        }
+        ConnectionHandshake::Quic(handshake) => {
+            println!(
+                "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
+                property = "QUIC Handshake",
+                rel_time = handshake.relative().as_secs_f64() * 1000.0,
+                abs_time = handshake.total().as_secs_f64() * 1000.0,
             );
         }
     }
@@ -141,6 +178,16 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         property = "HTTP Resp TTFB",
         rel_time = ttfb.ttfb_duration().relative().as_secs_f64() * 1000.0,
         abs_time = ttfb.ttfb_duration().total().as_secs_f64() * 1000.0,
+    );
+    println!(
+        "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
+        property = "HTTP Download",
+        rel_time = ttfb
+            .http_content_download_duration()
+            .relative()
+            .as_secs_f64()
+            * 1000.0,
+        abs_time = ttfb.http_content_download_duration().total().as_secs_f64() * 1000.0,
     );
     stdout()
         .execute(SetAttribute(Attribute::Reset))
