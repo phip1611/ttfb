@@ -102,7 +102,12 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
+      - name: Build tests
+        run: cargo build --tests --verbose
+      # An unreachable host blocks a test for minutes, until the TCP connect
+      # times out. Fail early instead.
       - name: Run tests
+        timeout-minutes: 2
         run: cargo test --verbose -- network_tests
 
   style_checks:

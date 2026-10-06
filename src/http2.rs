@@ -28,14 +28,17 @@ fn http2_error(error: h2::Error) -> TtfbError {
 ///
 /// The client offers `h2` via ALPN (Application-Layer Protocol Negotiation),
 /// the TLS extension through which client and server agree on the application
-/// protocol during the handshake.
+/// protocol during the handshake. It also offers `http/1.1`, so that servers
+/// without HTTP/2 complete the handshake instead of failing it. This reports
+/// them as not supporting HTTP/2, which lets the client fall back to
+/// HTTP/1.1.
 async fn connect_tls(
     tcp: TcpStream,
     url: &Url,
     tls_config: Arc<ClientConfig>,
 ) -> Result<TlsStream<TcpStream>, TtfbError> {
     let tls = TlsConnector::from(tls_config)
-        .with_alpn(vec![b"h2".to_vec()])
+        .with_alpn(vec![b"h2".to_vec(), b"http/1.1".to_vec()])
         .connect(tls::server_name(url)?, tcp)
         .await
         .map_err(|error| TtfbError::Tls(error.to_string()))?;

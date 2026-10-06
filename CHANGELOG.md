@@ -37,6 +37,9 @@ only change something for the binary.
   fail with the new `TtfbError::UnsupportedHttpProtocol`.
 - Added HTTP/3 measurements over QUIC with `HttpProtocol::Http3`. They need
   the Cargo feature `http3`, which is enabled by default.
+- `ProtocolSelection::Auto`, the default, selects HTTP/3, HTTP/2, or
+  HTTP/1.1, whichever the server supports first in this order. Protocols built
+  without their Cargo feature are skipped.
 
 ## ttfb binary
 
