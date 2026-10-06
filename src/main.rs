@@ -26,6 +26,7 @@ use crossterm::ExecutableCommand;
 use crossterm::style::{Attribute, SetAttribute};
 use std::fmt::{self, Display, Formatter};
 use std::io::stdout;
+use std::net::SocketAddr;
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::process::exit;
 use std::str::FromStr;
@@ -216,8 +217,8 @@ fn exit_error(err: TtfbError) -> ! {
     exit(-1)
 }
 
-/// Prints the URL, the HTTP protocol, and the response status of the
-/// measurement.
+/// Prints the URL, the address, the HTTP protocol, and the response status of
+/// the measurement.
 fn print_title(ttfb: &TtfbOutcome) {
     println!(
         "TTFB for {url} (by ttfb@v{crate_version})",
@@ -228,6 +229,8 @@ fn print_title(ttfb: &TtfbOutcome) {
         ProtocolSelection::Auto => " (selected automatically)",
         ProtocolSelection::Only(_) => "",
     };
+    let address = SocketAddr::new(ttfb.ip_addr(), ttfb.port());
+    println!("{:<14}: {address}", "Address");
     println!("{:<14}: {}{selection}", "Protocol", ttfb.protocol());
     println!("{:<14}: {}", "Status", ttfb.status());
 }

@@ -83,6 +83,7 @@ The input string can be for example:
 If you installed the CLI and invoke it like `$ ttfb https://phip1611.de`, the output will look like:
 ```text
 TTFB for https://phip1611.de (by ttfb@v2.0.0)
+Address       : 85.13.155.159:443
 Protocol      : HTTP/2 (selected automatically)
 Status        : 200 OK
 PROPERTY        REL TIME (ms)   ABS TIME (ms)
@@ -97,6 +98,7 @@ HTTP Download :         0.013          56.733
 For HTTP/3, the QUIC handshake replaces the TCP connect and the TLS handshake:
 ```text
 TTFB for https://www.cloudflare.com (by ttfb@v2.0.0)
+Address       : 104.16.124.96:443
 Protocol      : HTTP/3 (selected automatically)
 Status        : 200 OK
 PROPERTY        REL TIME (ms)   ABS TIME (ms)
@@ -112,6 +114,7 @@ instead:
 ```text
 $ ttfb --repeat 2s https://phip1611.de
 TTFB for https://phip1611.de (by ttfb@v2.0.0)
+Address       : 85.13.155.159:443
 Protocol      : HTTP/2 (selected automatically)
 Status        : 200 OK
 Measurements  : 19
