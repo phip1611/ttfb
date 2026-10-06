@@ -42,14 +42,30 @@ const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// DNS lookups faster than this (in ms) were probably answered by a cache.
 const DNS_CACHED_MS: f64 = 2.0;
 
-// The labels of the steps in the output.
-const DNS_LOOKUP_STEP: &str = "DNS Lookup";
-const TCP_CONNECT_STEP: &str = "TCP Connect";
-const TLS_HANDSHAKE_STEP: &str = "TLS Handshake";
-const QUIC_HANDSHAKE_STEP: &str = "QUIC Handshake";
-const HTTP_SEND_GET_STEP: &str = "HTTP Send GET";
-const TTFB_STEP: &str = "HTTP Resp TTFB";
-const HTTP_DOWNLOAD_STEP: &str = "HTTP Download";
+/// The names of a step in the output.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct StepName {
+    /// The label in the table, e.g., "TCP Connect".
+    label: &'static str,
+    /// The key in the JSON output, e.g., "tcp_connect".
+    #[allow(dead_code, reason = "the JSON output of a following commit uses it")]
+    key: &'static str,
+}
+
+impl StepName {
+    const fn new(label: &'static str, key: &'static str) -> Self {
+        Self { label, key }
+    }
+}
+
+// The names of the steps in the output.
+const DNS_LOOKUP_STEP: StepName = StepName::new("DNS Lookup", "dns_lookup");
+const TCP_CONNECT_STEP: StepName = StepName::new("TCP Connect", "tcp_connect");
+const TLS_HANDSHAKE_STEP: StepName = StepName::new("TLS Handshake", "tls_handshake");
+const QUIC_HANDSHAKE_STEP: StepName = StepName::new("QUIC Handshake", "quic_handshake");
+const HTTP_SEND_GET_STEP: StepName = StepName::new("HTTP Send GET", "http_get_send");
+const TTFB_STEP: StepName = StepName::new("HTTP Resp TTFB", "ttfb");
+const HTTP_DOWNLOAD_STEP: StepName = StepName::new("HTTP Download", "http_content_download");
 
 macro_rules! unwrap_or_exit {
     ($ident:ident) => {
@@ -257,8 +273,8 @@ fn print_title(ttfb: &TtfbOutcome) {
 /// A step of a measurement.
 #[derive(Debug)]
 struct Step {
-    /// The label in the table, e.g., "TCP Connect".
-    label: &'static str,
+    /// The names of the step in the output.
+    name: StepName,
     /// The duration of the step itself.
     relative: Duration,
     /// The duration from the start of the measurement to the end of the step.
@@ -266,9 +282,9 @@ struct Step {
 }
 
 impl Step {
-    const fn new(label: &'static str, duration: DurationPair) -> Self {
+    const fn new(name: StepName, duration: DurationPair) -> Self {
         Self {
-            label,
+            name,
             relative: duration.relative(),
             absolute: duration.total(),
         }
@@ -417,7 +433,7 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
         .map_err(|err| err.to_string())?;
 
     for (step, abs_stats, rel_stats) in steps_to_stats {
-        let label = step.label;
+        let label = step.name.label;
         let [_, rel_median, _, _] = rel_stats;
         let cells: [String; 4] =
             array::from_fn(|i| fmt_cell(&format_ms(abs_stats[i]), &format_ms(rel_stats[i])));
@@ -426,10 +442,10 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
             cells.each_ref().map(String::as_str),
         );
         // The first lookup may miss the cache, so judge by the median.
-        if label == DNS_LOOKUP_STEP && rel_median < DNS_CACHED_MS {
+        if step.name == DNS_LOOKUP_STEP && rel_median < DNS_CACHED_MS {
             line.push_str("  (probably cached)");
         }
-        if label == TTFB_STEP {
+        if step.name == TTFB_STEP {
             stdout()
                 .execute(SetAttribute(Attribute::Bold))
                 .map_err(|err| err.to_string())?;
@@ -477,7 +493,7 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         .map_err(|err| err.to_string())?;
 
     for step in Step::all(ttfb) {
-        let label = step.label;
+        let label = step.name.label;
         let rel_ms = step.relative.as_secs_f64() * 1000.0;
         let abs_ms = step.absolute.as_secs_f64() * 1000.0;
         let mut line = format!(
@@ -485,10 +501,10 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
             format_ms(rel_ms),
             format_ms(abs_ms)
         );
-        if label == DNS_LOOKUP_STEP && rel_ms < DNS_CACHED_MS {
+        if step.name == DNS_LOOKUP_STEP && rel_ms < DNS_CACHED_MS {
             line.push_str("  (probably cached)");
         }
-        if label == TTFB_STEP {
+        if step.name == TTFB_STEP {
             stdout()
                 .execute(SetAttribute(Attribute::Bold))
                 .map_err(|err| err.to_string())?;
