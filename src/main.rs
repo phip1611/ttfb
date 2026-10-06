@@ -217,7 +217,7 @@ fn steps(ttfb: &TtfbOutcome) -> Vec<(&'static str, Duration)> {
     }
     match ttfb.connection_handshake() {
         ConnectionHandshake::Tcp { connect, tls } => {
-            steps.push(("TCP connect", connect.relative()));
+            steps.push(("TCP Connect", connect.relative()));
             if let Some(tls) = tls {
                 steps.push(("TLS Handshake", tls.relative()));
             }
@@ -226,7 +226,7 @@ fn steps(ttfb: &TtfbOutcome) -> Vec<(&'static str, Duration)> {
             steps.push(("QUIC Handshake", handshake.relative()));
         }
     }
-    steps.push(("HTTP GET Req", ttfb.http_get_send_duration().relative()));
+    steps.push(("HTTP Send GET", ttfb.http_get_send_duration().relative()));
     steps.push((TTFB_STEP, ttfb.ttfb_duration().relative()));
     steps.push((
         "HTTP Download",
@@ -328,7 +328,7 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         ConnectionHandshake::Tcp { connect, tls } => {
             println!(
                 "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
-                property = "TCP connect",
+                property = "TCP Connect",
                 rel_time = connect.relative().as_secs_f64() * 1000.0,
                 abs_time = connect.total().as_secs_f64() * 1000.0,
             );
@@ -352,7 +352,7 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
     }
     println!(
         "{property:<14}: {rel_time:>13.3}   {abs_time:>13.3}",
-        property = "HTTP GET Req",
+        property = "HTTP Send GET",
         rel_time = ttfb.http_get_send_duration().relative().as_secs_f64() * 1000.0,
         abs_time = ttfb.http_get_send_duration().total().as_secs_f64() * 1000.0,
     );

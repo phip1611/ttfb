@@ -78,9 +78,9 @@ TTFB for https://phip1611.de (by ttfb@v2.0.0)
 Protocol: HTTP/2 (selected automatically)
 PROPERTY        REL TIME (ms)   ABS TIME (ms)
 DNS Lookup    :         1.110           1.110  (probably cached)
-TCP connect   :         8.025           9.135
+TCP Connect   :         8.025           9.135
 TLS Handshake :        15.345          24.480
-HTTP GET Req  :         0.113          24.593
+HTTP Send GET :         0.113          24.593
 HTTP Resp TTFB:        32.127          56.720
 HTTP Download :         0.013          56.733
 ```
@@ -92,7 +92,7 @@ Protocol: HTTP/3 (selected automatically)
 PROPERTY        REL TIME (ms)   ABS TIME (ms)
 DNS Lookup    :         1.070           1.070  (probably cached)
 QUIC Handshake:        16.562          17.632
-HTTP GET Req  :         0.052          17.684
+HTTP Send GET :         0.052          17.684
 HTTP Resp TTFB:        80.432          98.116
 HTTP Download :       295.336         393.452
 ```
@@ -106,9 +106,9 @@ Protocol: HTTP/2 (selected automatically)
 Measurements: 19
 PROPERTY             MIN (ms)     MEDIAN (ms)       MEAN (ms)        MAX (ms)
 DNS Lookup    :         0.932           1.086           1.310           3.289  (probably cached)
-TCP connect   :         6.724           7.848           7.969          12.479
+TCP Connect   :         6.724           7.848           7.969          12.479
 TLS Handshake :        12.806          14.625          14.691          15.991
-HTTP GET Req  :         0.069           0.087           0.102           0.182
+HTTP Send GET :         0.069           0.087           0.102           0.182
 HTTP Resp TTFB:        17.393          29.861          27.645          38.382
 HTTP Download :         0.007           0.012           0.012           0.018
 Total         :        38.906          53.604          51.729          62.751
