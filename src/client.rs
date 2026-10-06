@@ -80,8 +80,15 @@ impl TtfbClient {
     }
 
     /// Measures `target` via HTTP/1.1.
-    fn measure_http11(&self, target: &Target) -> Result<TtfbOutcome, TtfbError> {
-        http11::measure(target, Arc::clone(&self.tls_config))
+    fn measure_http11(
+        &self,
+        target: &Target,
+        deadline: Deadline,
+    ) -> Result<TtfbOutcome, TtfbError> {
+        // The errors of the blocking I/O don't tell whether the deadline
+        // caused them.
+        http11::measure(target, Arc::clone(&self.tls_config), deadline)
+            .map_err(|error| deadline.explain(error))
     }
 
     /// Measures `target` via HTTP/2. The asynchronous exchange runs on a
@@ -126,7 +133,7 @@ impl TtfbClient {
     /// HTTP/2, then HTTP/1.1. Plain HTTP only supports HTTP/1.1.
     fn measure_auto(&self, target: &Target, deadline: Deadline) -> Result<TtfbOutcome, TtfbError> {
         if target.url.scheme() != "https" {
-            return self.measure_http11(target);
+            return self.measure_http11(target, deadline);
         }
         self.measure_http3(target, deadline)
             .or_else(|error| match error {
@@ -134,7 +141,7 @@ impl TtfbClient {
                 error => Err(error),
             })
             .or_else(|error| match error {
-                TtfbError::UnsupportedHttpProtocol(_) => self.measure_http11(target),
+                TtfbError::UnsupportedHttpProtocol(_) => self.measure_http11(target, deadline),
                 error => Err(error),
             })
     }
@@ -166,7 +173,7 @@ impl TtfbClient {
         let target = Target::resolve(input.as_ref(), deadline)?;
         let outcome = match self.options.protocol {
             ProtocolSelection::Auto => self.measure_auto(&target, deadline),
-            ProtocolSelection::Only(HttpProtocol::Http11) => self.measure_http11(&target),
+            ProtocolSelection::Only(HttpProtocol::Http11) => self.measure_http11(&target, deadline),
             ProtocolSelection::Only(HttpProtocol::Http2) => self.measure_http2(&target, deadline),
             ProtocolSelection::Only(HttpProtocol::Http3) => self.measure_http3(&target, deadline),
         }?;
@@ -177,10 +184,8 @@ impl TtfbClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "http2")]
     use std::net::TcpListener;
 
-    #[cfg(feature = "http2")]
     const TIMEOUT: Duration = TtfbOptions::MIN_TIMEOUT;
 
     /// Measures `url` via `protocol` with `timeout`.
@@ -197,13 +202,40 @@ mod tests {
         .measure(url)
     }
 
+    /// Returns a listener whose connections the OS accepts without accept(),
+    /// but nobody answers, and its port.
+    fn unresponsive_tcp_server() -> (TcpListener, u16) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("should bind a free port");
+        let port = listener.local_addr().expect("should be bound").port();
+        (listener, port)
+    }
+
+    #[test]
+    fn http11_timeout() {
+        let (_listener, port) = unresponsive_tcp_server();
+        let result = measure(
+            &format!("http://127.0.0.1:{port}"),
+            HttpProtocol::Http11,
+            TIMEOUT,
+        );
+        assert_eq!(result, Err(TtfbError::Timeout(TIMEOUT)));
+    }
+
+    #[test]
+    fn https11_timeout() {
+        let (_listener, port) = unresponsive_tcp_server();
+        let result = measure(
+            &format!("https://127.0.0.1:{port}"),
+            HttpProtocol::Http11,
+            TIMEOUT,
+        );
+        assert_eq!(result, Err(TtfbError::Timeout(TIMEOUT)));
+    }
+
     #[cfg(feature = "http2")]
     #[test]
     fn http2_timeout() {
-        // The OS accepts the connection without accept(), but nobody answers
-        // the TLS handshake.
-        let listener = TcpListener::bind("127.0.0.1:0").expect("should bind a free port");
-        let port = listener.local_addr().expect("should be bound").port();
+        let (_listener, port) = unresponsive_tcp_server();
         let result = measure(
             &format!("https://127.0.0.1:{port}"),
             HttpProtocol::Http2,

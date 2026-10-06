@@ -2,14 +2,15 @@
 
 //! HTTP/1.1 measurements over TCP or TLS, including the response framing.
 
+use crate::deadline::Deadline;
 use crate::outcome::{Connect, TtfbTimings};
 use crate::target::Target;
 use crate::{CRATE_VERSION, HttpProtocol, TtfbError, TtfbOutcome, tls};
 use http::header::{CONTENT_LENGTH, TRANSFER_ENCODING};
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
-use std::io::{Read as IoRead, Write as IoWrite};
-use std::net::{IpAddr, TcpStream};
+use std::io::{self, ErrorKind, Read as IoRead, Write as IoWrite};
+use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::str;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -27,6 +28,42 @@ const MAX_HEAD_SIZE: usize = 64 * 1024;
 trait IoReadAndWrite: IoWrite + IoRead {}
 
 impl<T: IoRead + IoWrite> IoReadAndWrite for T {}
+
+/// A TCP stream whose reads and writes fail when the deadline passes.
+///
+/// Socket timeouts only limit a single read or write, so each one is
+/// limited to the time that remains until the deadline.
+struct DeadlineStream {
+    tcp: TcpStream,
+    deadline: Deadline,
+}
+
+impl DeadlineStream {
+    /// Returns the time until the deadline.
+    fn remaining(&self) -> io::Result<Duration> {
+        self.deadline
+            .remaining()
+            .map_err(|_| io::Error::from(ErrorKind::TimedOut))
+    }
+}
+
+impl IoRead for DeadlineStream {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.tcp.set_read_timeout(Some(self.remaining()?))?;
+        self.tcp.read(buf)
+    }
+}
+
+impl IoWrite for DeadlineStream {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.tcp.set_write_timeout(Some(self.remaining()?))?;
+        self.tcp.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.tcp.flush()
+    }
+}
 
 /// How the end of a response body was determined.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -270,11 +307,18 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-/// Initializes the TCP connection to the IP address. Measures the duration.
-fn tcp_connect(addr: IpAddr, port: u16) -> Result<(TcpStream, Duration), TtfbError> {
-    let addr_w_port = (addr, port);
+/// Initializes the TCP connection to the IP address until `deadline`.
+/// Measures the duration.
+fn tcp_connect(
+    addr: IpAddr,
+    port: u16,
+    deadline: Deadline,
+) -> Result<(DeadlineStream, Duration), TtfbError> {
+    let addr_w_port = SocketAddr::from((addr, port));
     let now = Instant::now();
-    let mut tcp = TcpStream::connect(addr_w_port).map_err(TtfbError::CantConnectTcp)?;
+    let tcp = TcpStream::connect_timeout(&addr_w_port, deadline.remaining()?)
+        .map_err(TtfbError::CantConnectTcp)?;
+    let mut tcp = DeadlineStream { tcp, deadline };
     tcp.flush().map_err(TtfbError::OtherStreamError)?;
     let tcp_connect_duration = now.elapsed();
     Ok((tcp, tcp_connect_duration))
@@ -283,7 +327,7 @@ fn tcp_connect(addr: IpAddr, port: u16) -> Result<(TcpStream, Duration), TtfbErr
 /// If the scheme is "https", this replaces the TCP-Stream with a `TLS<TCP>`-stream.
 /// If TLS is used, it measures the time of the TLS handshake.
 fn tls_handshake_if_necessary(
-    mut tcp: TcpStream,
+    mut tcp: DeadlineStream,
     url: &Url,
     tls_config: Arc<ClientConfig>,
 ) -> Result<(Box<dyn IoReadAndWrite>, Option<Duration>), TtfbError> {
@@ -308,10 +352,14 @@ fn tls_handshake_if_necessary(
 
 /// Measures one GET request via HTTP/1.1: TCP connect, the TLS handshake for
 /// HTTPS, sending the request, the first response byte, and the download of
-/// the complete response.
-pub fn measure(target: &Target, tls_config: Arc<ClientConfig>) -> Result<TtfbOutcome, TtfbError> {
+/// the complete response. Reads and writes fail when `deadline` passes.
+pub fn measure(
+    target: &Target,
+    tls_config: Arc<ClientConfig>,
+    deadline: Deadline,
+) -> Result<TtfbOutcome, TtfbError> {
     // Connect, with a TLS handshake for HTTPS.
-    let (tcp, tcp_connect_duration) = tcp_connect(target.address, target.port)?;
+    let (tcp, tcp_connect_duration) = tcp_connect(target.address, target.port, deadline)?;
     let (mut tcp, tls_handshake_duration) =
         tls_handshake_if_necessary(tcp, &target.url, tls_config)?;
 
@@ -450,7 +498,7 @@ mod network_tests {
     /// Requests `url` and returns how the response body was framed.
     fn framing_of(url: &str) -> Result<Framing, TtfbError> {
         let target = Target::resolve(url, Deadline::for_tests())?;
-        let (tcp, _) = tcp_connect(target.address, target.port)?;
+        let (tcp, _) = tcp_connect(target.address, target.port, Deadline::for_tests())?;
         let (mut stream, _) = tls_handshake_if_necessary(tcp, &target.url, tls::config(false))?;
         stream
             .write_all(build_request(&target.url).as_bytes())
