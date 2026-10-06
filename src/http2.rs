@@ -5,6 +5,7 @@
 use crate::outcome::{Connect, TtfbTimings};
 use crate::target::Target;
 use crate::{HttpProtocol, TtfbError, TtfbOutcome, build_http_request, tls};
+use h2::client::Builder;
 use rustls::ClientConfig;
 use std::sync::Arc;
 use std::time::Instant;
@@ -103,7 +104,7 @@ pub async fn measure(
     let (response, send_duration) = {
         let request = build_http_request(&target.url)?;
         let begin = Instant::now();
-        let (mut sender, connection) = h2::client::Builder::new()
+        let (mut sender, connection) = Builder::new()
             .initial_window_size(STREAM_WINDOW_SIZE)
             .initial_connection_window_size(CONNECTION_WINDOW_SIZE)
             // The request has no body, so any body buffer type works.

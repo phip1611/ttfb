@@ -10,6 +10,7 @@ use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{IpAddr, TcpStream};
+use std::str;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use url::Url;
@@ -217,7 +218,7 @@ fn read_chunked_body(tcp: &mut dyn IoReadAndWrite, mut body: Vec<u8>) -> Result<
             read_more(tcp, &mut body)?;
         };
         // Parse the hex size and ignore chunk extensions after ';'.
-        let chunk_size = std::str::from_utf8(&body[..line_end])
+        let chunk_size = str::from_utf8(&body[..line_end])
             .ok()
             .and_then(|line| line.split(';').next())
             .and_then(|size| usize::from_str_radix(size.trim(), 16).ok())

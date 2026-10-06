@@ -33,6 +33,7 @@
     clippy::all,
     clippy::cargo,
     clippy::nursery,
+    clippy::absolute_paths,
     clippy::must_use_candidate
 )]
 // I can't do anything about this; fault of the dependencies
@@ -48,6 +49,7 @@ pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
 pub use outcome::{ConnectionHandshake, DurationPair, HttpProtocol, TtfbOutcome};
 
 use std::{panic, thread};
+use tokio::runtime::Builder;
 #[cfg(any(feature = "http2", feature = "http3"))]
 use {
     http::header::{ACCEPT, ACCEPT_ENCODING, USER_AGENT},
@@ -83,7 +85,7 @@ where
     thread::scope(|scope| {
         scope
             .spawn(|| {
-                tokio::runtime::Builder::new_current_thread()
+                Builder::new_current_thread()
                     .enable_io()
                     .enable_time()
                     .build()
