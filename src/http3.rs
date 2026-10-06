@@ -5,6 +5,7 @@
 use crate::outcome::{Connect, TtfbTimings};
 use crate::target::Target;
 use crate::{HttpProtocol, TtfbError, TtfbOutcome, build_http_request, tls};
+use bytes::Bytes;
 use rustls::ClientConfig;
 use std::fmt::Display;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -82,8 +83,12 @@ pub async fn measure(
         (connection, begin.elapsed())
     };
 
-    // The driver drives the HTTP/3 connection in the background.
-    let (mut driver, mut sender) = h3::client::new(h3_quinn::Connection::new(connection))
+    // The driver drives the HTTP/3 connection in the background. GREASE is
+    // disabled, as some servers reset the request when they receive a GREASE
+    // frame on the request stream.
+    let (mut driver, mut sender) = h3::client::builder()
+        .send_grease(false)
+        .build::<_, _, Bytes>(h3_quinn::Connection::new(connection))
         .await
         .map_err(http3_error)?;
     tokio::spawn(async move {
