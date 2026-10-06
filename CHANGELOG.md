@@ -65,6 +65,8 @@ only change something for the binary.
   relative and the absolute duration of each step.
 - Added `--timeout <SECS>`, the maximum duration of a measurement, which
   defaults to 10 s and must be between 1 s and 3600 s.
+- Added `-4/--ipv4` and `-6/--ipv6` to require an IP version. Without them,
+  IPv4 is preferred as before.
 - Added `--headers`, which prints the status line and the headers of the
   response.
 - The tables show the timings in ms with one decimal. More decimals only

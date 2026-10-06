@@ -33,8 +33,8 @@ use std::process::exit;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 use ttfb::{
-    ConnectionHandshake, DurationPair, HttpProtocol, ProtocolSelection, TtfbClient, TtfbError,
-    TtfbOptions, TtfbOutcome,
+    ConnectionHandshake, DurationPair, HttpProtocol, IpVersion, ProtocolSelection, TtfbClient,
+    TtfbError, TtfbOptions, TtfbOutcome,
 };
 
 const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -134,6 +134,13 @@ struct TtfbArgs {
     /// Automatically choose the best supported HTTP protocol.
     #[arg(long, conflicts_with_all = ["http11", "http2", "http3"])]
     auto_protocol: bool,
+    /// Connect only via IPv4. Fails for hosts without an IPv4 address.
+    /// Without --ipv4 and --ipv6, IPv4 is preferred.
+    #[arg(short = '4', long, conflicts_with = "ipv6")]
+    ipv4: bool,
+    /// Connect only via IPv6. Fails for hosts without an IPv6 address.
+    #[arg(short = '6', long, conflicts_with = "ipv4")]
+    ipv6: bool,
     /// Measure N times, or with an "s" suffix repeatedly for N seconds, and
     /// print the minimum, median, mean, and maximum of each step.
     #[arg(long, value_name = "N|Ns")]
@@ -167,11 +174,18 @@ fn main() {
     } else {
         ProtocolSelection::Auto
     };
+    let ip_version = if input.ipv4 {
+        IpVersion::V4
+    } else if input.ipv6 {
+        IpVersion::V6
+    } else {
+        IpVersion::Any
+    };
     let options = TtfbOptions {
         protocol,
         allow_insecure_certificates: input.allow_insecure_certificates,
         timeout: Duration::from_secs(input.timeout),
-        ..TtfbOptions::default()
+        ip_version,
     };
     if let Some(repeat) = input.repeat {
         let res = measure_repeatedly(options, &input.host, repeat);
