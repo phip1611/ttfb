@@ -105,10 +105,8 @@ fn exit_error(err: TtfbError) -> ! {
     exit(-1)
 }
 
-fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
-    stdout()
-        .execute(SetAttribute(Attribute::Bold))
-        .map_err(|err| err.to_string())?;
+/// Prints the URL and the HTTP protocol of the measurement.
+fn print_title(ttfb: &TtfbOutcome) {
     println!(
         "TTFB for {url} (by ttfb@v{crate_version})",
         url = ttfb.user_input(),
@@ -119,6 +117,13 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         ProtocolSelection::Only(_) => "",
     };
     println!("Protocol: {}{selection}", ttfb.protocol());
+}
+
+fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
+    stdout()
+        .execute(SetAttribute(Attribute::Bold))
+        .map_err(|err| err.to_string())?;
+    print_title(ttfb);
     println!("PROPERTY        REL TIME (ms)   ABS TIME (ms)");
     stdout()
         .execute(SetAttribute(Attribute::Reset))
