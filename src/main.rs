@@ -550,8 +550,9 @@ mod json {
     use humantime::format_rfc3339_millis;
     use serde::{Serialize, Serializer};
     use serde_json::value::RawValue;
+    use std::net::IpAddr;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
-    use ttfb::{TtfbError, TtfbOutcome};
+    use ttfb::{ProtocolSelection, TtfbError, TtfbOutcome};
 
     /// The version of the JSON output. It increases with incompatible changes.
     const JSON_SCHEMA_VERSION: u32 = 1;
@@ -632,6 +633,36 @@ mod json {
         }
     }
 
+    /// The target and the response of a measurement in the JSON output.
+    #[derive(Debug, Serialize)]
+    struct JsonResponse {
+        url: String,
+        ip: IpAddr,
+        port: u16,
+        protocol: String,
+        /// Whether the protocol was selected automatically ("auto") or
+        /// explicitly ("explicit").
+        protocol_selection: &'static str,
+        status: u16,
+    }
+
+    impl JsonResponse {
+        /// Returns the response of `ttfb`.
+        fn from_outcome(ttfb: &TtfbOutcome) -> Self {
+            Self {
+                url: ttfb.user_input().to_string(),
+                ip: ttfb.ip_addr(),
+                port: ttfb.port(),
+                protocol: ttfb.protocol().to_string(),
+                protocol_selection: match ttfb.protocol_selection() {
+                    ProtocolSelection::Auto => "auto",
+                    ProtocolSelection::Only(_) => "explicit",
+                },
+                status: ttfb.status().as_u16(),
+            }
+        }
+    }
+
     /// The error of a failed measurement in the JSON output.
     #[derive(Debug, Serialize)]
     struct JsonError {
@@ -676,13 +707,16 @@ mod json {
         started_at: String,
         /// When the first measurement started, as Unix timestamp in ms.
         started_at_unix_ms: u128,
-        /// The error, if a measurement failed. Then, there are no statistics.
+        /// The error, if a measurement failed. Then, there are no statistics
+        /// and no response.
         error: Option<JsonError>,
         /// The number of measurements.
         measurements_num: usize,
         /// The statistics of each step over all measurements. Steps that
         /// didn't happen are missing.
         statistics_ms: JsonStepStatistics,
+        /// The response of the first measurement.
+        first_response: Option<JsonResponse>,
     }
 
     impl JsonOutput {
@@ -707,6 +741,7 @@ mod json {
                 error,
                 measurements_num: outcomes.len(),
                 statistics_ms: JsonStepStatistics::from_outcomes(outcomes),
+                first_response: outcomes.first().map(JsonResponse::from_outcome),
             }
         }
     }
@@ -773,7 +808,7 @@ mod json {
                 r#""started_at_unix_ms":0,"#,
                 r#""error":{"kind":"http","#,
                 r#""message":"Didn't receive any data. Is the host running a HTTP server?"},"#,
-                r#""measurements_num":0,"statistics_ms":{}}"#,
+                r#""measurements_num":0,"statistics_ms":{},"first_response":null}"#,
             );
             assert_eq!(to_string(&output).unwrap(), expected);
         }
