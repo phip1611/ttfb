@@ -546,7 +546,7 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
 /// Its only export is [`JsonOutput`], which [`JsonOutput::new`] creates from
 /// the measurements or their error, and which serializes to the JSON format.
 mod json {
-    use super::{calc_statistics_from_durations, step_durations};
+    use super::{CRATE_VERSION, calc_statistics_from_durations, step_durations};
     use humantime::format_rfc3339_millis;
     use serde::{Serialize, Serializer};
     use serde_json::value::RawValue;
@@ -714,6 +714,7 @@ mod json {
     #[derive(Debug, Serialize)]
     pub(super) struct JsonOutput {
         schema_version: u32,
+        ttfb_version: &'static str,
         /// When the first measurement started, in RFC 3339 format in UTC.
         started_at: String,
         /// When the first measurement started, as Unix timestamp in ms.
@@ -744,6 +745,7 @@ mod json {
             };
             Self {
                 schema_version: JSON_SCHEMA_VERSION,
+                ttfb_version: CRATE_VERSION,
                 started_at: format_rfc3339_millis(started_at).to_string(),
                 started_at_unix_ms: started_at
                     .duration_since(UNIX_EPOCH)
@@ -815,7 +817,9 @@ mod json {
         fn json_output_of_an_error() {
             let output = JsonOutput::new(UNIX_EPOCH, &Err(TtfbError::NoHttpResponse));
             let expected = concat!(
-                r#"{"schema_version":1,"started_at":"1970-01-01T00:00:00.000Z","#,
+                r#"{"schema_version":1,"ttfb_version":""#,
+                env!("CARGO_PKG_VERSION"),
+                r#"","started_at":"1970-01-01T00:00:00.000Z","#,
                 r#""started_at_unix_ms":0,"#,
                 r#""error":{"kind":"http","#,
                 r#""message":"Didn't receive any data. Is the host running a HTTP server?"},"#,
