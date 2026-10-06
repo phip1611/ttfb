@@ -3,6 +3,7 @@
 //! Module for [`TtfbOutcome`].
 
 use crate::ProtocolSelection;
+use http::{HeaderMap, StatusCode};
 use std::fmt::{self, Display, Formatter};
 use std::net::IpAddr;
 use std::time::Duration;
@@ -118,6 +119,13 @@ pub(crate) struct TtfbTimings {
     pub http_ttfb: Duration,
     /// Receiving the rest of the response.
     pub http_content_download: Duration,
+}
+
+/// The status code and the headers of the final response.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ResponseHead {
+    pub status: StatusCode,
+    pub headers: HeaderMap,
 }
 
 /// The final result of this library. It contains all the measured timings.

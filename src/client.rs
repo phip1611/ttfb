@@ -88,6 +88,7 @@ impl TtfbClient {
         // The errors of the blocking I/O don't tell whether the deadline
         // caused them.
         http11::measure(target, Arc::clone(&self.tls_config), deadline)
+            .map(|(outcome, _)| outcome)
             .map_err(|error| deadline.explain(error))
     }
 
