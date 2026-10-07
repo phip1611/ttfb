@@ -55,7 +55,11 @@ impl Display for IpVersion {
 }
 
 /// Configuration for [`TtfbClient`].
+///
+/// New options may be added without a breaking change. Hence, start with
+/// [`TtfbOptions::default()`] and set the fields you need.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct TtfbOptions {
     /// The HTTP protocol to measure.
     pub protocol: ProtocolSelection,

@@ -26,10 +26,9 @@ fn can_run_http2_measurement_from_tokio_runtime() {
         .build()
         .unwrap();
     tokio.block_on(async {
-        let client = TtfbClient::new(TtfbOptions {
-            protocol: ttfb::ProtocolSelection::Only(ttfb::HttpProtocol::Http2),
-            ..TtfbOptions::default()
-        });
+        let mut options = TtfbOptions::default();
+        options.protocol = ttfb::ProtocolSelection::Only(ttfb::HttpProtocol::Http2);
+        let client = TtfbClient::new(options);
         let ttfb = client.measure("https://localhost:1");
         match ttfb {
             Err(TtfbError::CantConnectTcp(_)) => {}

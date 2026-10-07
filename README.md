@@ -71,10 +71,9 @@ The library exposes `TtfbClient`, which is configured with `TtfbOptions`:
 ```rust
 use ttfb::{HttpProtocol, ProtocolSelection, TtfbClient, TtfbOptions};
 
-let client = TtfbClient::new(TtfbOptions {
-    protocol: ProtocolSelection::Only(HttpProtocol::Http2),
-    ..TtfbOptions::default()
-});
+let mut options = TtfbOptions::default();
+options.protocol = ProtocolSelection::Only(HttpProtocol::Http2);
+let client = TtfbClient::new(options);
 let outcome = client.measure("https://phip1611.de")?;
 ```
 

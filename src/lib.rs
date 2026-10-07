@@ -17,10 +17,9 @@
 //! ```no_run
 //! use ttfb::{HttpProtocol, ProtocolSelection, TtfbClient, TtfbOptions};
 //!
-//! let client = TtfbClient::new(TtfbOptions {
-//!     protocol: ProtocolSelection::Only(HttpProtocol::Http2),
-//!     ..TtfbOptions::default()
-//! });
+//! let mut options = TtfbOptions::default();
+//! options.protocol = ProtocolSelection::Only(HttpProtocol::Http2);
+//! let client = TtfbClient::new(options);
 //! let outcome = client.measure("https://example.com")?;
 //! println!("{}: {:?}", outcome.protocol(), outcome.ttfb_duration().total());
 //! # Ok::<(), ttfb::TtfbError>(())

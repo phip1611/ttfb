@@ -34,7 +34,7 @@ impl Display for HttpProtocol {
 
 /// Bundles the duration of a measurement step with the total duration since
 /// the beginning of the overall measurement.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DurationPair {
     rel: Duration,
     total: Duration,
@@ -213,7 +213,7 @@ impl TtfbOutcome {
     /// steps.
     #[must_use]
     pub fn connection_handshake(&self) -> ConnectionHandshake {
-        let dns_end = self.dns_lookup_duration().unwrap_or_default().total();
+        let dns_end = self.timings.dns_lookup.unwrap_or_default();
         match self.timings.connect {
             Connect::Tcp { connect, tls } => {
                 let connect = DurationPair::new(connect, dns_end);

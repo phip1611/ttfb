@@ -12,13 +12,19 @@ only change something for the binary.
   configured with `TtfbOptions`:
   `TtfbClient::new(TtfbOptions::default()).measure(url)`.
   `TtfbOptions::protocol` takes a `ProtocolSelection`, and
-  `TtfbOutcome::protocol_selection()` reports it.
-- **BREAKING** `TtfbError` is `#[non_exhaustive]`.
+  `TtfbOutcome::protocol_selection()` reports it. `TtfbOptions` is
+  `#[non_exhaustive]`, so that new options are no breaking change: set its
+  fields on `TtfbOptions::default()`.
+- **BREAKING** `TtfbError`, `ResolveDnsError`, and `InvalidUrlError` are
+  `#[non_exhaustive]`.
 - **BREAKING** `TtfbError::CantConnectTls` and `TtfbError::CantVerifyTls`
   are replaced by `TtfbError::Tls`, which describes the error as a string.
   The lib no longer depends on `rustls-connector`.
 - **BREAKING** `AllowInvalidCertsVerifier` is no longer public. It was
   exported by accident.
+- **BREAKING** `InvalidUrlError::Other` is removed. It was never used.
+- **BREAKING** `DurationPair` no longer implements `Default`. A pair of zero
+  durations isn't a meaningful measurement.
 - **BREAKING** `TtfbOutcome::tcp_connect_duration()` and
   `TtfbOutcome::tls_handshake_duration()` are replaced by
   `TtfbOutcome::connection_handshake()`. It reports how the connection was
