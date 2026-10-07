@@ -102,7 +102,8 @@ fn resolve_dns(
     // On Unix/Posix systems, this will read: /etc/resolv.conf
     // In the end, this uses the name server of the system or falls back to
     // the library's default (usually Google DNS).
-    let mut builder = DnsResolver::builder_tokio().map_err(TtfbError::CantConfigureDNSError)?;
+    let mut builder = DnsResolver::builder_tokio()
+        .map_err(|error| TtfbError::CantConfigureDNSError(error.to_string()))?;
     builder.options_mut().ip_strategy = match ip_version {
         IpVersion::Any => LookupIpStrategy::Ipv4thenIpv6,
         IpVersion::V4 => LookupIpStrategy::Ipv4Only,
@@ -110,11 +111,11 @@ fn resolve_dns(
     };
     let resolver = builder.build();
 
-    let begin = Instant::now();
-
-    // hickory_resolver requires Tokio.
-    let response = run_in_tokio(deadline.run(async {
-        resolver
+    // hickory_resolver requires Tokio. Starting the runtime and its thread
+    // doesn't count as part of the lookup.
+    let (response, duration) = run_in_tokio(deadline.run(async {
+        let begin = Instant::now();
+        let response = resolver
             .lookup_ip(url.host_str().unwrap())
             .await
             .map(|res| res.iter().collect::<Vec<IpAddr>>())
@@ -122,12 +123,11 @@ fn resolve_dns(
                 if ip_version != IpVersion::Any && err.is_no_records_found() {
                     TtfbError::NoAddressForIpVersion(ip_version)
                 } else {
-                    TtfbError::CantResolveDns(ResolveDnsError::Other(Box::new(err)))
+                    TtfbError::CantResolveDns(ResolveDnsError::Other(err.to_string()))
                 }
-            })
+            })?;
+        Ok((response, begin.elapsed()))
     }))?;
-
-    let duration = begin.elapsed();
 
     let ipv4_addr = response.iter().find(|addr| addr.is_ipv4());
     let ipv6_addr = response.iter().find(|addr| addr.is_ipv6());

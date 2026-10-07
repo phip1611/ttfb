@@ -26,6 +26,10 @@ only change something for the binary.
   TLS handshake, or a QUIC handshake for HTTP/3.
 - **BREAKING** `TtfbError` has the new variants `UnsupportedHttpProtocol`,
   `Http2`, and `Http3`.
+- **BREAKING** `ResolveDnsError::Other` and `TtfbError::CantConfigureDNSError`
+  describe the error as a string instead of exposing the `ResolveError` of
+  `hickory-resolver`, so that the DNS resolver can change without a breaking
+  change.
 - TLS trusts the system's root certificates and the bundled Mozilla root
   certificates together. Previously, the bundled ones were only used if the
   system's could not be loaded.
@@ -33,6 +37,8 @@ only change something for the binary.
 - `TtfbError` compares `CantConnectHttp` and `OtherStreamError` correctly.
   Before, two errors of the same variant were never equal, while the two
   variants were equal with the same `io::ErrorKind`.
+- The duration of the DNS lookup no longer includes starting the internal Tokio
+  runtime and its thread, which took about 0.1-0.3 ms.
 - Added `TtfbOutcome::protocol()`, which reports the HTTP protocol used as
   `HttpProtocol`.
 - Added HTTP/2 measurements over TLS with `HttpProtocol::Http2`. They need
