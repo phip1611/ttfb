@@ -26,6 +26,18 @@
 //! # Ok::<(), ttfb::TtfbError>(())
 //! ```
 //!
+//! [`TtfbClient::measure_async`] is the async variant. It works with every
+//! executor, such as the ones of Tokio or smol:
+//!
+//! ```no_run
+//! # use ttfb::{TtfbClient, TtfbOptions};
+//! # async fn example() -> Result<(), ttfb::TtfbError> {
+//! let client = TtfbClient::new(TtfbOptions::default());
+//! let outcome = client.measure_async("https://example.com").await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
 //! ## Cross Platform
 //! CLI + lib work on Linux, MacOS, and Windows.
 
@@ -49,16 +61,16 @@ pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
 pub use http::{HeaderMap, StatusCode};
 pub use outcome::{ConnectionHandshake, DurationPair, HttpProtocol, TtfbOutcome};
 
-use std::{panic, thread};
-use tokio::runtime::Builder;
 #[cfg(any(feature = "http2", feature = "http3"))]
 use {
+    futures_lite::future,
     http::header::{ACCEPT, ACCEPT_ENCODING, USER_AGENT},
     url::Url,
 };
 
 mod client;
 mod deadline;
+mod dns;
 mod error;
 mod http11;
 #[cfg(feature = "http2")]
@@ -71,32 +83,17 @@ mod tls;
 
 const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Runs `future` to completion on a dedicated current-thread Tokio runtime.
+/// Runs `future` while `driver` drives the connection in the same task.
 ///
-/// The library has a blocking API but should also work inside a Tokio
-/// runtime, where starting another runtime on the same thread panics. Hence,
-/// the runtime runs in a dedicated thread. For the measurements, this
-/// overhead is negligible.
-///
-/// More info: <https://stackoverflow.com/a/62536772/2891595>
-fn run_in_tokio<F>(future: F) -> F::Output
-where
-    F: Future + Send,
-    F::Output: Send,
-{
-    thread::scope(|scope| {
-        scope
-            .spawn(|| {
-                Builder::new_current_thread()
-                    .enable_io()
-                    .enable_time()
-                    .build()
-                    .expect("should be able to create a Tokio runtime")
-                    .block_on(future)
-            })
-            .join()
-            .unwrap_or_else(|panic| panic::resume_unwind(panic))
-    })
+/// The driver never completes the race: if the connection ends, `future` fails
+/// on its own.
+#[cfg(any(feature = "http2", feature = "http3"))]
+async fn drive<T>(driver: impl Future, future: impl Future<Output = T>) -> T {
+    let driver = async {
+        let _ = driver.await;
+        future::pending().await
+    };
+    future::or(future, driver).await
 }
 
 /// Builds the GET request for HTTP/2 and HTTP/3. Both derive the `:scheme`,

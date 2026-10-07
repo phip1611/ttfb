@@ -7,8 +7,6 @@ use crate::deadline::Deadline;
 use crate::http2;
 #[cfg(feature = "http3")]
 use crate::http3;
-#[cfg(any(feature = "http2", feature = "http3"))]
-use crate::run_in_tokio;
 use crate::target::Target;
 use crate::{HttpProtocol, TtfbError, TtfbOutcome, http11, tls};
 use rustls::ClientConfig;
@@ -113,50 +111,33 @@ impl TtfbClient {
     }
 
     /// Measures `target` via HTTP/1.1.
-    fn measure_http11(
-        &self,
-        target: &Target,
-        deadline: Deadline,
-    ) -> Result<TtfbOutcome, TtfbError> {
-        // The errors of the blocking I/O don't tell whether the deadline
-        // caused them.
-        http11::measure(target, Arc::clone(&self.tls_config), deadline)
-            .map_err(|error| deadline.explain(error))
+    async fn measure_http11(&self, target: &Target) -> Result<TtfbOutcome, TtfbError> {
+        http11::measure(target, Arc::clone(&self.tls_config)).await
     }
 
-    /// Measures `target` via HTTP/2. The asynchronous exchange runs on a
-    /// dedicated Tokio runtime.
+    /// Measures `target` via HTTP/2.
     #[cfg(feature = "http2")]
-    fn measure_http2(&self, target: &Target, deadline: Deadline) -> Result<TtfbOutcome, TtfbError> {
-        run_in_tokio(deadline.run(http2::measure(target, Arc::clone(&self.tls_config))))
+    async fn measure_http2(&self, target: &Target) -> Result<TtfbOutcome, TtfbError> {
+        http2::measure(target, Arc::clone(&self.tls_config)).await
     }
 
     /// Fails, as the crate was built without the `http2` feature.
     #[cfg(not(feature = "http2"))]
-    fn measure_http2(
-        &self,
-        _target: &Target,
-        _deadline: Deadline,
-    ) -> Result<TtfbOutcome, TtfbError> {
+    async fn measure_http2(&self, _target: &Target) -> Result<TtfbOutcome, TtfbError> {
         Err(TtfbError::UnsupportedHttpProtocol(
             "ttfb was built without the http2 feature".into(),
         ))
     }
 
-    /// Measures `target` via HTTP/3. The asynchronous exchange runs on a
-    /// dedicated Tokio runtime.
+    /// Measures `target` via HTTP/3.
     #[cfg(feature = "http3")]
-    fn measure_http3(&self, target: &Target, deadline: Deadline) -> Result<TtfbOutcome, TtfbError> {
-        run_in_tokio(deadline.run(http3::measure(target, Arc::clone(&self.tls_config))))
+    async fn measure_http3(&self, target: &Target) -> Result<TtfbOutcome, TtfbError> {
+        http3::measure(target, Arc::clone(&self.tls_config)).await
     }
 
     /// Fails, as the crate was built without the `http3` feature.
     #[cfg(not(feature = "http3"))]
-    fn measure_http3(
-        &self,
-        _target: &Target,
-        _deadline: Deadline,
-    ) -> Result<TtfbOutcome, TtfbError> {
+    async fn measure_http3(&self, _target: &Target) -> Result<TtfbOutcome, TtfbError> {
         Err(TtfbError::UnsupportedHttpProtocol(
             "ttfb was built without the http3 feature".into(),
         ))
@@ -164,19 +145,19 @@ impl TtfbClient {
 
     /// Measures `target` with the best protocol that is available: HTTP/3, then
     /// HTTP/2, then HTTP/1.1. Plain HTTP only supports HTTP/1.1.
-    fn measure_auto(&self, target: &Target, deadline: Deadline) -> Result<TtfbOutcome, TtfbError> {
+    async fn measure_auto(&self, target: &Target) -> Result<TtfbOutcome, TtfbError> {
         if target.url.scheme() != "https" {
-            return self.measure_http11(target, deadline);
+            return self.measure_http11(target).await;
         }
-        self.measure_http3(target, deadline)
-            .or_else(|error| match error {
-                TtfbError::UnsupportedHttpProtocol(_) => self.measure_http2(target, deadline),
-                error => Err(error),
-            })
-            .or_else(|error| match error {
-                TtfbError::UnsupportedHttpProtocol(_) => self.measure_http11(target, deadline),
-                error => Err(error),
-            })
+        match self.measure_http3(target).await {
+            Err(TtfbError::UnsupportedHttpProtocol(_)) => {}
+            result => return result,
+        }
+        match self.measure_http2(target).await {
+            Err(TtfbError::UnsupportedHttpProtocol(_)) => {}
+            result => return result,
+        }
+        self.measure_http11(target).await
     }
 
     /// Checks that the options are valid.
@@ -186,6 +167,16 @@ impl TtfbClient {
             return Err(TtfbError::InvalidTimeout(timeout));
         }
         Ok(())
+    }
+
+    /// Measures one GET request to `input` and blocks until it completes.
+    ///
+    /// This is the blocking variant of [`TtfbClient::measure_async`], which
+    /// describes `input`. Async code should use that instead, as this blocks
+    /// the thread of the executor.
+    pub fn measure(&self, input: impl AsRef<str>) -> Result<TtfbOutcome, TtfbError> {
+        // async-io's block_on also drives the reactor on this thread.
+        async_io::block_on(self.measure_async(input))
     }
 
     /// Measures one GET request to `input`.
@@ -200,16 +191,30 @@ impl TtfbClient {
     /// - `https://1.1.1.1`
     /// - `12.34.56.78/foobar` (defaults to `http://`)
     /// - `12.34.56.78` (defaults to `http://`)
-    pub fn measure(&self, input: impl AsRef<str>) -> Result<TtfbOutcome, TtfbError> {
+    ///
+    /// The future works with every executor, such as the ones of Tokio or
+    /// smol: async-io drives the I/O and the timers on its own thread, and the
+    /// DNS lookup runs on a helper thread.
+    pub async fn measure_async(&self, input: impl AsRef<str>) -> Result<TtfbOutcome, TtfbError> {
         self.validate()?;
         let deadline = Deadline::after(self.options.timeout);
-        let target = Target::resolve(input.as_ref(), self.options.ip_version, deadline)?;
-        let outcome = match self.options.protocol {
-            ProtocolSelection::Auto => self.measure_auto(&target, deadline),
-            ProtocolSelection::Only(HttpProtocol::Http11) => self.measure_http11(&target, deadline),
-            ProtocolSelection::Only(HttpProtocol::Http2) => self.measure_http2(&target, deadline),
-            ProtocolSelection::Only(HttpProtocol::Http3) => self.measure_http3(&target, deadline),
-        }?;
+        let target = Target::resolve(input.as_ref(), self.options.ip_version, deadline).await?;
+        let outcome = deadline
+            .run(async {
+                match self.options.protocol {
+                    ProtocolSelection::Auto => self.measure_auto(&target).await,
+                    ProtocolSelection::Only(HttpProtocol::Http11) => {
+                        self.measure_http11(&target).await
+                    }
+                    ProtocolSelection::Only(HttpProtocol::Http2) => {
+                        self.measure_http2(&target).await
+                    }
+                    ProtocolSelection::Only(HttpProtocol::Http3) => {
+                        self.measure_http3(&target).await
+                    }
+                }
+            })
+            .await?;
         Ok(outcome.with_protocol_selection(self.options.protocol))
     }
 }
@@ -217,7 +222,12 @@ impl TtfbClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::StatusCode;
+    use futures_lite::future;
+    use std::io::{Read, Write};
     use std::net::TcpListener;
+    use std::thread;
+    use tokio::runtime::Builder;
 
     const TIMEOUT: Duration = TtfbOptions::MIN_TIMEOUT;
 
@@ -241,6 +251,63 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").expect("should bind a free port");
         let port = listener.local_addr().expect("should be bound").port();
         (listener, port)
+    }
+
+    /// Returns the URL of a local HTTP/1.1 server that answers one request.
+    fn local_http_server() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("should bind a free port");
+        let port = listener.local_addr().expect("should be bound").port();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("should accept the client");
+            // Unread request bytes would reset the connection on close.
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let mut buffer = [0; 1024];
+                let read = stream.read(&mut buffer).expect("should read the request");
+                request.extend_from_slice(&buffer[..read]);
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                .expect("should write the response");
+        });
+        format!("http://127.0.0.1:{port}")
+    }
+
+    /// Returns a client for HTTP/1.1 with the timeout [`TIMEOUT`].
+    fn http11_client() -> TtfbClient {
+        TtfbClient::new(TtfbOptions {
+            protocol: ProtocolSelection::Only(HttpProtocol::Http11),
+            timeout: TIMEOUT,
+            ..TtfbOptions::default()
+        })
+    }
+
+    /// The I/O and the timers work without the reactor of async-io on the
+    /// thread of the executor.
+    #[test]
+    fn measure_async_with_futures_lite() {
+        let client = http11_client();
+        let outcome = future::block_on(client.measure_async(local_http_server()));
+        assert_eq!(outcome.map(|outcome| outcome.status()), Ok(StatusCode::OK));
+        let (_listener, port) = unresponsive_tcp_server();
+        let url = format!("http://127.0.0.1:{port}");
+        let result = future::block_on(client.measure_async(url));
+        assert_eq!(result, Err(TtfbError::Timeout(TIMEOUT)));
+    }
+
+    /// The measurement doesn't need the I/O and time drivers of Tokio.
+    #[test]
+    fn measure_async_with_tokio() {
+        let runtime = Builder::new_current_thread()
+            .build()
+            .expect("should be able to create a Tokio runtime");
+        let client = http11_client();
+        let outcome = runtime.block_on(client.measure_async(local_http_server()));
+        assert_eq!(outcome.map(|outcome| outcome.status()), Ok(StatusCode::OK));
+        let (_listener, port) = unresponsive_tcp_server();
+        let url = format!("http://127.0.0.1:{port}");
+        let result = runtime.block_on(client.measure_async(url));
+        assert_eq!(result, Err(TtfbError::Timeout(TIMEOUT)));
     }
 
     #[test]
@@ -277,6 +344,14 @@ mod tests {
         assert_eq!(result, Err(TtfbError::Timeout(TIMEOUT)));
     }
 
+    /// The future must be [`Send`] to run on multi-threaded executors.
+    #[test]
+    fn measure_async_is_send() {
+        fn assert_send(_: &impl Send) {}
+        let client = TtfbClient::new(TtfbOptions::default());
+        assert_send(&client.measure_async("http://127.0.0.1"));
+    }
+
     #[test]
     fn invalid_timeout() {
         for timeout in [
@@ -294,6 +369,7 @@ mod tests {
 mod network_tests {
     use super::*;
     use crate::ConnectionHandshake;
+    use tokio::runtime::Builder;
 
     /// Returns the options for the tests, with a longer timeout than the
     /// default, as external sites, such as badssl.com, are sometimes slow.
@@ -433,6 +509,29 @@ mod network_tests {
                 matches!(outcome.connection_handshake(), ConnectionHandshake::Quic(_)),
                 "{url}"
             );
+        }
+    }
+
+    /// All protocols work in a Tokio runtime without its I/O and time drivers.
+    #[cfg(all(feature = "http2", feature = "http3"))]
+    #[test]
+    fn measures_all_protocols_with_tokio() {
+        let runtime = Builder::new_current_thread()
+            .build()
+            .expect("should be able to create a Tokio runtime");
+        for protocol in [
+            HttpProtocol::Http11,
+            HttpProtocol::Http2,
+            HttpProtocol::Http3,
+        ] {
+            let client = TtfbClient::new(TtfbOptions {
+                protocol: ProtocolSelection::Only(protocol),
+                ..options()
+            });
+            let outcome = runtime
+                .block_on(client.measure_async("https://www.cloudflare.com"))
+                .unwrap_or_else(|error| panic!("{protocol}: {error}"));
+            assert_eq!(outcome.protocol(), protocol);
         }
     }
 

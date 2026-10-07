@@ -34,13 +34,17 @@ required-features = ["bin"]
 [features]
 default = ["http2", "http3"]
 bin = ["dep:clap", "dep:crossterm", "dep:humantime", "dep:serde", "dep:serde_json"]
-# HTTP/2 measurements with h2 over tokio-rustls.
-http2 = ["dep:h2", "dep:tokio-rustls", "tokio/net"]
+# HTTP/2 measurements with h2 over futures-rustls.
+http2 = ["dep:h2", "dep:tokio-util"]
 # HTTP/3 measurements with h3 over quinn.
 http3 = ["dep:bytes", "dep:h3", "dep:h3-quinn", "dep:quinn"]
 
 [dependencies]
 # +++ LIBRARY +++
+
+# Async I/O and timers that work with every executor
+async-io = "2.6.0"
+futures-lite = { version = "2.6.1", default-features = false, features = ["std"] }
 
 # HTTP/1.1 response framing
 httparse = "1.10.1"
@@ -49,18 +53,23 @@ http = "1.3.1"
 
 # HTTP/2 (feature "http2")
 h2 = { version = "0.4.11", optional = true }
-tokio-rustls = { version = "0.26.4", optional = true, default-features = false, features = ["ring"] }
+# h2 requires the I/O traits of Tokio, which this provides for async-io.
+tokio-util = { version = "0.7.19", optional = true, features = ["compat"] }
 
 # HTTP/3 (feature "http3")
 bytes = { version = "1.10.1", optional = true }
 h3 = { version = "0.0.8", optional = true }
 h3-quinn = { version = "0.0.10", optional = true }
-quinn = { version = "0.11.7", optional = true, default-features = false, features = ["ring", "runtime-tokio", "rustls"] }
+# The smol runtime is based on async-io and works with every executor.
+quinn = { version = "0.11.7", optional = true, default-features = false, features = ["ring", "runtime-smol", "rustls"] }
 
 thiserror = "2.0.12"
+# Returns the result of the DNS lookup from its helper thread
+futures-channel = { version = "0.3.31", default-features = false, features = ["alloc"] }
 # DNS over systems default DNS resolver
 hickory-resolver = { version = "=0.25.2", default-features = false, features = ["system-config", "tokio"] }
 # TLS handshake
+futures-rustls = { version = "0.26.0", default-features = false, features = ["ring"] }
 rustls = { version = "0.23.25", default-features = false, features = ["tls12", "logging", "ring", "std"] }
 # Root certificates: the system's and the bundled Mozilla ones
 rustls-native-certs = "0.8.1"
@@ -105,6 +114,7 @@ features = [
   "wrap_help",
 ]
 
+# The runtime of hickory-resolver on the thread of the DNS lookup
 [dependencies.tokio]
 version = "1.50.0"
 default-features = false

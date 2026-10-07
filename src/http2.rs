@@ -4,14 +4,16 @@
 
 use crate::outcome::{Connect, ResponseHead, TtfbTimings};
 use crate::target::Target;
-use crate::{HttpProtocol, TtfbError, TtfbOutcome, build_http_request, tls};
+use crate::{HttpProtocol, TtfbError, TtfbOutcome, build_http_request, drive, tls};
+use async_io::Async;
+use futures_rustls::TlsConnector;
+use futures_rustls::client::TlsStream;
 use h2::client::Builder;
 use rustls::ClientConfig;
+use std::net::TcpStream;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::net::TcpStream;
-use tokio_rustls::TlsConnector;
-use tokio_rustls::client::TlsStream;
+use tokio_util::compat::FuturesAsyncReadCompatExt;
 use url::Url;
 
 /// The flow-control windows that Chrome uses for a stream and for the whole
@@ -34,12 +36,13 @@ fn http2_error(error: h2::Error) -> TtfbError {
 /// them as not supporting HTTP/2, which lets the client fall back to
 /// HTTP/1.1.
 async fn connect_tls(
-    tcp: TcpStream,
+    tcp: Async<TcpStream>,
     url: &Url,
-    tls_config: Arc<ClientConfig>,
-) -> Result<TlsStream<TcpStream>, TtfbError> {
-    let tls = TlsConnector::from(tls_config)
-        .with_alpn(vec![b"h2".to_vec(), b"http/1.1".to_vec()])
+    tls_config: &ClientConfig,
+) -> Result<TlsStream<Async<TcpStream>>, TtfbError> {
+    let mut tls_config = tls_config.clone();
+    tls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    let tls = TlsConnector::from(Arc::new(tls_config))
         .connect(tls::server_name(url)?, tcp)
         .await
         .map_err(|error| TtfbError::Tls(error.to_string()))?;
@@ -89,51 +92,52 @@ pub async fn measure(
     // Connect, with a TLS handshake that negotiates HTTP/2.
     let (tcp, tcp_duration) = {
         let begin = Instant::now();
-        let tcp = TcpStream::connect((target.address, target.port))
+        let tcp = Async::<TcpStream>::connect((target.address, target.port))
             .await
             .map_err(TtfbError::CantConnectTcp)?;
         (tcp, begin.elapsed())
     };
     let (tls, tls_duration) = {
         let begin = Instant::now();
-        let tls = connect_tls(tcp, &target.url, tls_config).await?;
+        let tls = connect_tls(tcp, &target.url, &tls_config).await?;
         (tls, begin.elapsed())
     };
 
     // Send the request after the HTTP/2 connection preface.
-    let (response, send_duration) = {
-        let request = build_http_request(&target.url)?;
-        let begin = Instant::now();
-        let (mut sender, connection) = Builder::new()
-            .initial_window_size(STREAM_WINDOW_SIZE)
-            .initial_connection_window_size(CONNECTION_WINDOW_SIZE)
-            // The request has no body, so any body buffer type works.
-            .handshake::<_, &[u8]>(tls)
-            .await
-            .map_err(http2_error)?;
-        // The connection future drives the HTTP/2 protocol in the background.
-        tokio::spawn(async move {
-            let _ = connection.await;
-        });
+    let request = build_http_request(&target.url)?;
+    let begin = Instant::now();
+    let (mut sender, connection) = Builder::new()
+        .initial_window_size(STREAM_WINDOW_SIZE)
+        .initial_connection_window_size(CONNECTION_WINDOW_SIZE)
+        // The request has no body, so any body buffer type works.
+        .handshake::<_, &[u8]>(tls.compat())
+        .await
+        .map_err(http2_error)?;
+    // The connection future drives the HTTP/2 protocol during the exchange.
+    let exchange = async {
         let (response, _) = sender.send_request(request, true).map_err(http2_error)?;
-        (response, begin.elapsed())
-    };
+        let send_duration = begin.elapsed();
 
-    // Wait for the response headers.
-    let (response, ttfb_duration) = {
-        let begin = Instant::now();
-        let response = response.await.map_err(http2_error)?;
-        (response, begin.elapsed())
-    };
+        // Wait for the response headers.
+        let (response, ttfb_duration) = {
+            let begin = Instant::now();
+            let response = response.await.map_err(http2_error)?;
+            (response, begin.elapsed())
+        };
 
-    let (head, body) = response.into_parts();
+        let (head, body) = response.into_parts();
 
-    // Download the body.
-    let download_duration = {
-        let begin = Instant::now();
-        download_body(body).await?;
-        begin.elapsed()
+        // Download the body.
+        let download_duration = {
+            let begin = Instant::now();
+            download_body(body).await?;
+            begin.elapsed()
+        };
+
+        Ok::<_, TtfbError>((head, send_duration, ttfb_duration, download_duration))
     };
+    let (head, send_duration, ttfb_duration, download_duration) =
+        drive(connection, exchange).await?;
 
     Ok(TtfbOutcome::new(
         target.input.clone(),
@@ -162,13 +166,16 @@ mod tests {
     use super::*;
     use crate::IpVersion;
     use crate::deadline::Deadline;
-    use crate::run_in_tokio;
 
     #[test]
     fn requires_https() {
-        let target =
-            Target::resolve("http://localhost:1", IpVersion::Any, Deadline::for_tests()).unwrap();
-        let result = run_in_tokio(measure(&target, tls::config(false)));
+        let target = async_io::block_on(Target::resolve(
+            "http://localhost:1",
+            IpVersion::Any,
+            Deadline::for_tests(),
+        ))
+        .unwrap();
+        let result = async_io::block_on(measure(&target, tls::config(false)));
         assert!(matches!(result, Err(TtfbError::UnsupportedHttpProtocol(_))));
     }
 }
