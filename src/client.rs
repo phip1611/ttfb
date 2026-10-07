@@ -222,7 +222,12 @@ impl TtfbClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::StatusCode;
+    use futures_lite::future;
+    use std::io::{Read, Write};
     use std::net::TcpListener;
+    use std::thread;
+    use tokio::runtime::Builder;
 
     const TIMEOUT: Duration = TtfbOptions::MIN_TIMEOUT;
 
@@ -246,6 +251,63 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").expect("should bind a free port");
         let port = listener.local_addr().expect("should be bound").port();
         (listener, port)
+    }
+
+    /// Returns the URL of a local HTTP/1.1 server that answers one request.
+    fn local_http_server() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("should bind a free port");
+        let port = listener.local_addr().expect("should be bound").port();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("should accept the client");
+            // Unread request bytes would reset the connection on close.
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let mut buffer = [0; 1024];
+                let read = stream.read(&mut buffer).expect("should read the request");
+                request.extend_from_slice(&buffer[..read]);
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                .expect("should write the response");
+        });
+        format!("http://127.0.0.1:{port}")
+    }
+
+    /// Returns a client for HTTP/1.1 with the timeout [`TIMEOUT`].
+    fn http11_client() -> TtfbClient {
+        TtfbClient::new(TtfbOptions {
+            protocol: ProtocolSelection::Only(HttpProtocol::Http11),
+            timeout: TIMEOUT,
+            ..TtfbOptions::default()
+        })
+    }
+
+    /// The I/O and the timers work without the reactor of async-io on the
+    /// thread of the executor.
+    #[test]
+    fn measure_async_with_futures_lite() {
+        let client = http11_client();
+        let outcome = future::block_on(client.measure_async(local_http_server()));
+        assert_eq!(outcome.map(|outcome| outcome.status()), Ok(StatusCode::OK));
+        let (_listener, port) = unresponsive_tcp_server();
+        let url = format!("http://127.0.0.1:{port}");
+        let result = future::block_on(client.measure_async(url));
+        assert_eq!(result, Err(TtfbError::Timeout(TIMEOUT)));
+    }
+
+    /// The measurement doesn't need the I/O and time drivers of Tokio.
+    #[test]
+    fn measure_async_with_tokio() {
+        let runtime = Builder::new_current_thread()
+            .build()
+            .expect("should be able to create a Tokio runtime");
+        let client = http11_client();
+        let outcome = runtime.block_on(client.measure_async(local_http_server()));
+        assert_eq!(outcome.map(|outcome| outcome.status()), Ok(StatusCode::OK));
+        let (_listener, port) = unresponsive_tcp_server();
+        let url = format!("http://127.0.0.1:{port}");
+        let result = runtime.block_on(client.measure_async(url));
+        assert_eq!(result, Err(TtfbError::Timeout(TIMEOUT)));
     }
 
     #[test]
@@ -307,6 +369,7 @@ mod tests {
 mod network_tests {
     use super::*;
     use crate::ConnectionHandshake;
+    use tokio::runtime::Builder;
 
     /// Returns the options for the tests, with a longer timeout than the
     /// default, as external sites, such as badssl.com, are sometimes slow.
@@ -446,6 +509,29 @@ mod network_tests {
                 matches!(outcome.connection_handshake(), ConnectionHandshake::Quic(_)),
                 "{url}"
             );
+        }
+    }
+
+    /// All protocols work in a Tokio runtime without its I/O and time drivers.
+    #[cfg(all(feature = "http2", feature = "http3"))]
+    #[test]
+    fn measures_all_protocols_with_tokio() {
+        let runtime = Builder::new_current_thread()
+            .build()
+            .expect("should be able to create a Tokio runtime");
+        for protocol in [
+            HttpProtocol::Http11,
+            HttpProtocol::Http2,
+            HttpProtocol::Http3,
+        ] {
+            let client = TtfbClient::new(TtfbOptions {
+                protocol: ProtocolSelection::Only(protocol),
+                ..options()
+            });
+            let outcome = runtime
+                .block_on(client.measure_async("https://www.cloudflare.com"))
+                .unwrap_or_else(|error| panic!("{protocol}: {error}"));
+            assert_eq!(outcome.protocol(), protocol);
         }
     }
 
