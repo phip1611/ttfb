@@ -57,9 +57,10 @@ impl Deadline {
 
 #[cfg(test)]
 impl Deadline {
-    /// Creates a deadline for tests that don't depend on it.
+    /// Creates a deadline for tests. It is longer than the default timeout, as
+    /// the network tests use external sites, which are sometimes slow.
     pub fn for_tests() -> Self {
-        Self::after(crate::TtfbOptions::DEFAULT_TIMEOUT)
+        Self::after(Duration::from_secs(30))
     }
 }
 

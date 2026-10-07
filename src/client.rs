@@ -295,6 +295,15 @@ mod network_tests {
     use super::*;
     use crate::ConnectionHandshake;
 
+    /// Returns the options for the tests, with a longer timeout than the
+    /// default, as external sites, such as badssl.com, are sometimes slow.
+    fn options() -> TtfbOptions {
+        TtfbOptions {
+            timeout: Duration::from_secs(30),
+            ..TtfbOptions::default()
+        }
+    }
+
     fn has_tls_handshake(outcome: &TtfbOutcome) -> bool {
         matches!(
             outcome.connection_handshake(),
@@ -309,7 +318,7 @@ mod network_tests {
         TtfbClient::new(TtfbOptions {
             protocol: ProtocolSelection::Only(HttpProtocol::Http11),
             allow_insecure_certificates,
-            ..TtfbOptions::default()
+            ..options()
         })
         .measure(input)
     }
@@ -393,7 +402,7 @@ mod network_tests {
     fn measures_well_known_http2_websites() {
         let client = TtfbClient::new(TtfbOptions {
             protocol: ProtocolSelection::Only(HttpProtocol::Http2),
-            ..TtfbOptions::default()
+            ..options()
         });
         for url in [
             "https://www.google.com",
@@ -413,7 +422,7 @@ mod network_tests {
     fn measures_well_known_http3_websites() {
         let client = TtfbClient::new(TtfbOptions {
             protocol: ProtocolSelection::Only(HttpProtocol::Http3),
-            ..TtfbOptions::default()
+            ..options()
         });
         for url in ["https://www.google.com", "https://www.cloudflare.com"] {
             let outcome = client.measure(url).unwrap();
@@ -433,7 +442,7 @@ mod network_tests {
     #[cfg(all(feature = "http2", feature = "http3"))]
     #[test]
     fn auto_selects_the_best_supported_protocol() {
-        let client = TtfbClient::new(TtfbOptions::default());
+        let client = TtfbClient::new(options());
         for (url, expected) in [
             ("https://www.cloudflare.com", HttpProtocol::Http3),
             ("https://github.com", HttpProtocol::Http2),
@@ -455,7 +464,7 @@ mod network_tests {
     /// selection must report the error instead of falling back.
     #[test]
     fn auto_does_not_fall_back_on_certificate_errors() {
-        let error = TtfbClient::new(TtfbOptions::default())
+        let error = TtfbClient::new(options())
             .measure("https://expired.badssl.com")
             .unwrap_err();
         assert!(matches!(error, TtfbError::Tls(_)), "{error}");
