@@ -26,6 +26,18 @@
 //! # Ok::<(), ttfb::TtfbError>(())
 //! ```
 //!
+//! [`TtfbClient::measure_async`] is the async variant. It works with every
+//! executor, such as the ones of Tokio or smol:
+//!
+//! ```no_run
+//! # use ttfb::{TtfbClient, TtfbOptions};
+//! # async fn example() -> Result<(), ttfb::TtfbError> {
+//! let client = TtfbClient::new(TtfbOptions::default());
+//! let outcome = client.measure_async("https://example.com").await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
 //! ## Cross Platform
 //! CLI + lib work on Linux, MacOS, and Windows.
 

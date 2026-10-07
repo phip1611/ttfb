@@ -78,6 +78,13 @@ let client = TtfbClient::new(TtfbOptions {
 let outcome = client.measure("https://phip1611.de")?;
 ```
 
+`TtfbClient::measure_async()` is the async variant. It works with every
+executor, such as the ones of Tokio or smol:
+
+```rust
+let outcome = client.measure_async("https://phip1611.de").await?;
+```
+
 HTTP/2 and HTTP/3 support come with the Cargo features `http2` and `http3`,
 which are enabled by default. Without them, measurements with the respective
 protocol fail with `TtfbError::UnsupportedHttpProtocol`, and the automatic
