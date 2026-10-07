@@ -3,8 +3,9 @@
 //! The deadline of a measurement for async and blocking code.
 
 use crate::TtfbError;
+use async_io::Timer;
+use futures_lite::future;
 use std::time::{Duration, Instant};
-use tokio::time::timeout_at;
 
 /// The point in time by which a measurement must complete. Async code
 /// enforces it with [`Deadline::run`], blocking code with
@@ -49,9 +50,11 @@ impl Deadline {
         self,
         future: impl Future<Output = Result<T, TtfbError>>,
     ) -> Result<T, TtfbError> {
-        timeout_at(self.instant.into(), future)
-            .await
-            .unwrap_or_else(|_| Err(TtfbError::Timeout(self.timeout)))
+        let timeout = async {
+            Timer::at(self.instant).await;
+            Err(TtfbError::Timeout(self.timeout))
+        };
+        future::or(future, timeout).await
     }
 }
 
