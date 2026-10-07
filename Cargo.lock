@@ -2006,6 +2006,7 @@ dependencies = [
  "bytes",
  "clap",
  "crossterm",
+ "futures-channel",
  "futures-lite",
  "futures-rustls",
  "h2",

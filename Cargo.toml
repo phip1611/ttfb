@@ -64,6 +64,8 @@ h3-quinn = { version = "0.0.10", optional = true }
 quinn = { version = "0.11.7", optional = true, default-features = false, features = ["ring", "runtime-smol", "rustls"] }
 
 thiserror = "2.0.12"
+# Returns the result of the DNS lookup from its helper thread
+futures-channel = { version = "0.3.31", default-features = false, features = ["alloc"] }
 # DNS over systems default DNS resolver
 hickory-resolver = { version = "=0.25.2", default-features = false, features = ["system-config", "tokio"] }
 # TLS handshake
