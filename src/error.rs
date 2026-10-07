@@ -125,12 +125,13 @@ impl PartialEq for TtfbError {
         match (self, other) {
             (Self::InvalidUrl(e1), Self::InvalidUrl(e2)) => e1.eq(e2),
             (Self::CantResolveDns(e1), Self::CantResolveDns(e2)) => e1.eq(e2),
-            (Self::CantConnectTcp(e1), Self::CantConnectTcp(e2)) => e1.kind().eq(&e2.kind()),
+            (Self::CantConnectTcp(e1), Self::CantConnectTcp(e2))
+            | (Self::CantConnectHttp(e1), Self::CantConnectHttp(e2))
+            | (Self::OtherStreamError(e1), Self::OtherStreamError(e2)) => e1.kind().eq(&e2.kind()),
             (Self::Tls(e1), Self::Tls(e2))
             | (Self::UnsupportedHttpProtocol(e1), Self::UnsupportedHttpProtocol(e2))
             | (Self::Http2(e1), Self::Http2(e2))
             | (Self::Http3(e1), Self::Http3(e2)) => e1.eq(e2),
-            (Self::CantConnectHttp(e1), Self::OtherStreamError(e2)) => e1.kind().eq(&e2.kind()),
             (Self::CantConfigureDNSError(_e1), Self::CantConfigureDNSError(_e2)) => {
                 // nah, ignore it. Proper deep check is too complex.
                 // Shortcut is good enough for the sake of the library.
@@ -143,5 +144,32 @@ impl PartialEq for TtfbError {
             (Self::NoAddressForIpVersion(v1), Self::NoAddressForIpVersion(v2)) => v1.eq(v2),
             _ => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::ErrorKind;
+
+    #[test]
+    fn io_errors_are_equal_by_variant_and_kind() {
+        let error = || io::Error::from(ErrorKind::TimedOut);
+        assert_eq!(
+            TtfbError::CantConnectHttp(error()),
+            TtfbError::CantConnectHttp(error())
+        );
+        assert_eq!(
+            TtfbError::OtherStreamError(error()),
+            TtfbError::OtherStreamError(error())
+        );
+        assert_ne!(
+            TtfbError::CantConnectHttp(error()),
+            TtfbError::OtherStreamError(error())
+        );
+        assert_ne!(
+            TtfbError::CantConnectHttp(error()),
+            TtfbError::CantConnectHttp(io::Error::from(ErrorKind::ConnectionReset))
+        );
     }
 }
