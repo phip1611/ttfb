@@ -23,6 +23,8 @@ only change something for the binary.
 - **BREAKING** `AllowInvalidCertsVerifier` is no longer public. It was
   exported by accident.
 - **BREAKING** `InvalidUrlError::Other` is removed. It was never used.
+- **BREAKING** `DurationPair` no longer implements `Default`. A pair of zero
+  durations isn't a meaningful measurement.
 - **BREAKING** `TtfbOutcome::tcp_connect_duration()` and
   `TtfbOutcome::tls_handshake_duration()` are replaced by
   `TtfbOutcome::connection_handshake()`. It reports how the connection was
