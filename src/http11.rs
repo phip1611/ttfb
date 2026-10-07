@@ -652,7 +652,7 @@ mod network_tests {
         let deadline = Deadline::for_tests();
         let target = Target::resolve("https://www.google.com", IpVersion::Any, deadline).unwrap();
         let tls_config = tls::config(false, true);
-        run_in_tokio(http2::measure(&target, Arc::clone(&tls_config))).unwrap();
+        run_in_tokio(http2::measure(&target, Arc::clone(&tls_config), false)).unwrap();
         let outcome = measure(&target, tls_config, deadline, true).unwrap();
         assert_eq!(outcome.zero_rtt(), Some(ZeroRtt::Rejected));
         assert!(outcome.status().is_success());

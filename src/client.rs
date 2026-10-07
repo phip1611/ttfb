@@ -76,8 +76,8 @@ pub struct TtfbOptions {
     /// handshake is shorter than a full one. [`TtfbOutcome::zero_rtt`]
     /// reports whether the server accepted the early data.
     ///
-    /// Only HTTP/1.1 supports 0-RTT. With [`ProtocolSelection::Auto`], the
-    /// client therefore measures HTTP/1.1.
+    /// HTTP/3 doesn't support 0-RTT. With [`ProtocolSelection::Auto`], the
+    /// client therefore measures HTTP/2 or HTTP/1.1.
     pub zero_rtt: bool,
 }
 
@@ -142,9 +142,9 @@ impl TtfbClient {
         measure(self.options.zero_rtt)
     }
 
-    /// Fails with 0-RTT, which only HTTP/1.1 supports. For the automatic
-    /// selection, this falls back to HTTP/1.1.
-    #[cfg(any(feature = "http2", feature = "http3"))]
+    /// Fails with 0-RTT, which HTTP/3 doesn't support. For the automatic
+    /// selection, this falls back to HTTP/2 or HTTP/1.1.
+    #[cfg(feature = "http3")]
     fn check_zero_rtt_unsupported(&self, protocol: HttpProtocol) -> Result<(), TtfbError> {
         if self.options.zero_rtt {
             return Err(TtfbError::UnsupportedHttpProtocol(format!(
@@ -154,12 +154,18 @@ impl TtfbClient {
         Ok(())
     }
 
-    /// Measures `target` via HTTP/2. The asynchronous exchange runs on a
-    /// dedicated Tokio runtime.
+    /// Measures `target` via HTTP/2, after a warm-up request with 0-RTT. The
+    /// asynchronous exchanges run on a dedicated Tokio runtime.
     #[cfg(feature = "http2")]
     fn measure_http2(&self, target: &Target, deadline: Deadline) -> Result<TtfbOutcome, TtfbError> {
-        self.check_zero_rtt_unsupported(HttpProtocol::Http2)?;
-        run_in_tokio(deadline.run(http2::measure(target, Arc::clone(&self.tls_config))))
+        let measure = |early_data| http2::measure(target, Arc::clone(&self.tls_config), early_data);
+        run_in_tokio(deadline.run(async {
+            if self.options.zero_rtt {
+                // The warm-up obtains the session ticket for the early data.
+                measure(false).await?;
+            }
+            measure(self.options.zero_rtt).await
+        }))
     }
 
     /// Fails, as the crate was built without the `http2` feature.
@@ -528,6 +534,8 @@ mod network_tests {
         for protocol in [
             ProtocolSelection::Auto,
             ProtocolSelection::Only(HttpProtocol::Http11),
+            #[cfg(feature = "http2")]
+            ProtocolSelection::Only(HttpProtocol::Http2),
         ] {
             let client = TtfbClient::new(TtfbOptions {
                 protocol,
