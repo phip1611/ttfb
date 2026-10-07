@@ -12,7 +12,9 @@ only change something for the binary.
   configured with `TtfbOptions`:
   `TtfbClient::new(TtfbOptions::default()).measure(url)`.
   `TtfbOptions::protocol` takes a `ProtocolSelection`, and
-  `TtfbOutcome::protocol_selection()` reports it.
+  `TtfbOutcome::protocol_selection()` reports it. `TtfbOptions` is
+  `#[non_exhaustive]`, so that new options are no breaking change: set its
+  fields on `TtfbOptions::default()`.
 - **BREAKING** `TtfbError` is `#[non_exhaustive]`.
 - **BREAKING** `TtfbError::CantConnectTls` and `TtfbError::CantVerifyTls`
   are replaced by `TtfbError::Tls`, which describes the error as a string.

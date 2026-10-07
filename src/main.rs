@@ -200,12 +200,11 @@ fn main() {
     } else {
         IpVersion::Any
     };
-    let options = TtfbOptions {
-        protocol,
-        allow_insecure_certificates: input.allow_insecure_certificates,
-        timeout: Duration::from_secs(input.timeout),
-        ip_version,
-    };
+    let mut options = TtfbOptions::default();
+    options.protocol = protocol;
+    options.allow_insecure_certificates = input.allow_insecure_certificates;
+    options.timeout = Duration::from_secs(input.timeout);
+    options.ip_version = ip_version;
     if input.json {
         // Without --repeat, a single run is one measurement.
         let repeat = input
@@ -246,10 +245,9 @@ fn measure_repeatedly(
     // An automatic selection would probe the protocols again in every
     // measurement. For servers without HTTP/3, each probe waits for the
     // HTTP/3 timeout, so stick to the protocol of the first measurement.
-    let client = TtfbClient::new(TtfbOptions {
-        protocol: ProtocolSelection::Only(first.protocol()),
-        ..options
-    });
+    let mut options = options;
+    options.protocol = ProtocolSelection::Only(first.protocol());
+    let client = TtfbClient::new(options);
     let mut outcomes = vec![first];
     while repeat.should_continue(outcomes.len(), begin.elapsed()) {
         outcomes.push(client.measure(host)?);
