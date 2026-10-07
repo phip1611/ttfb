@@ -10,9 +10,10 @@ use bytes::Bytes;
 use futures_lite::future;
 use h3::client as h3_client;
 use quinn::crypto::rustls::QuicClientConfig;
+use quinn::{EndpointConfig, SmolRuntime};
 use rustls::ClientConfig;
 use std::fmt::Display;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -44,7 +45,16 @@ fn create_endpoint(
     } else {
         (Ipv4Addr::UNSPECIFIED, 0).into()
     };
-    let mut endpoint = quinn::Endpoint::client(local_address).map_err(unavailable)?;
+    let socket = UdpSocket::bind(local_address).map_err(unavailable)?;
+    // quinn's default runtime depends on the caller's runtime and on the
+    // enabled features of quinn, but the smol runtime works with any.
+    let mut endpoint = quinn::Endpoint::new(
+        EndpointConfig::default(),
+        None,
+        socket,
+        Arc::new(SmolRuntime),
+    )
+    .map_err(unavailable)?;
     endpoint.set_default_client_config(quinn::ClientConfig::new(Arc::new(crypto)));
     Ok(endpoint)
 }
