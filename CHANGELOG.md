@@ -4,7 +4,19 @@ As this crate exports a library and a binary, both are released simultaneously.
 However, some releases might only change things in the library and some might
 only change something for the binary.
 
-# v2.0.0 (UNRELEASED)
+# UNRELEASED
+
+# v2.0.0
+
+This is the biggest release since v1.0.0. `ttfb` now supports HTTP/2 and
+HTTP/3 (over QUIC) in addition to HTTP/1.1, and by default selects the newest
+protocol the server supports.
+
+- Library users: the `ttfb()` function is replaced by `TtfbClient` and
+  `TtfbOptions`, and several types changed. See the **BREAKING** entries below.
+- Binary users: the default protocol is no longer HTTP/1.1. Use `--http1.1`
+  for the previous behavior. New options include `--repeat` for statistics,
+  `--json` for scripts, `--headers`, `--timeout`, and `-4`/`-6`.
 
 ## ttfb lib
 
