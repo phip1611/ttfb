@@ -9,6 +9,7 @@ use thiserror::Error;
 
 /// Errors during DNS resolving.
 #[derive(Clone, Debug, Error, Eq, PartialEq, Hash)]
+#[non_exhaustive]
 pub enum ResolveDnsError {
     /// Can't find DNS entry for the given host.
     #[error("Can't find DNS entry for the given host.")]
@@ -20,6 +21,7 @@ pub enum ResolveDnsError {
 
 /// Errors during URL parsing.
 #[derive(Clone, Debug, Error, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[non_exhaustive]
 pub enum InvalidUrlError {
     /// No input was provided. Provide a URL, such as <https://example.com> or <https://1.2.3.4:443>.
     #[error(

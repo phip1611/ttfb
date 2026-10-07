@@ -15,7 +15,8 @@ only change something for the binary.
   `TtfbOutcome::protocol_selection()` reports it. `TtfbOptions` is
   `#[non_exhaustive]`, so that new options are no breaking change: set its
   fields on `TtfbOptions::default()`.
-- **BREAKING** `TtfbError` is `#[non_exhaustive]`.
+- **BREAKING** `TtfbError`, `ResolveDnsError`, and `InvalidUrlError` are
+  `#[non_exhaustive]`.
 - **BREAKING** `TtfbError::CantConnectTls` and `TtfbError::CantVerifyTls`
   are replaced by `TtfbError::Tls`, which describes the error as a string.
   The lib no longer depends on `rustls-connector`.
