@@ -22,6 +22,7 @@ only change something for the binary.
   The lib no longer depends on `rustls-connector`.
 - **BREAKING** `AllowInvalidCertsVerifier` is no longer public. It was
   exported by accident.
+- **BREAKING** `InvalidUrlError::Other` is removed. It was never used.
 - **BREAKING** `TtfbOutcome::tcp_connect_duration()` and
   `TtfbOutcome::tls_handshake_duration()` are replaced by
   `TtfbOutcome::connection_handshake()`. It reports how the connection was

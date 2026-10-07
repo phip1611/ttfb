@@ -34,9 +34,6 @@ pub enum InvalidUrlError {
     /// Wrong scheme. Only supports http and https.
     #[error("Wrong scheme '{0}://': Only supports http and https.")]
     WrongScheme(String),
-    /// Other unknown error.
-    #[error("Other unknown error.")]
-    Other,
 }
 
 /// Errors of the public interface of this crate.
