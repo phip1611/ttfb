@@ -42,6 +42,10 @@ http3 = ["dep:bytes", "dep:h3", "dep:h3-quinn", "dep:quinn"]
 [dependencies]
 # +++ LIBRARY +++
 
+# Async I/O and timers that work with every executor
+async-io = "2.6.0"
+futures-lite = { version = "2.6.1", default-features = false, features = ["std"] }
+
 # HTTP/1.1 response framing
 httparse = "1.10.1"
 # HTTP types, such as header names and status codes
