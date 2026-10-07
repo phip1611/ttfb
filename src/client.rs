@@ -118,10 +118,7 @@ impl TtfbClient {
         target: &Target,
         deadline: Deadline,
     ) -> Result<TtfbOutcome, TtfbError> {
-        // The errors of the blocking I/O don't tell whether the deadline
-        // caused them.
-        http11::measure(target, Arc::clone(&self.tls_config), deadline)
-            .map_err(|error| deadline.explain(error))
+        async_io::block_on(deadline.run(http11::measure(target, Arc::clone(&self.tls_config))))
     }
 
     /// Measures `target` via HTTP/2. The asynchronous exchange runs on a

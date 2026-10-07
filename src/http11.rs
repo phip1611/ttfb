@@ -2,14 +2,15 @@
 
 //! HTTP/1.1 measurements over TCP or TLS, including the response framing.
 
-use crate::deadline::Deadline;
 use crate::outcome::{Connect, ResponseHead, TtfbTimings};
 use crate::target::Target;
 use crate::{CRATE_VERSION, HttpProtocol, TtfbError, TtfbOutcome, tls};
+use async_io::Async;
+use futures_lite::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use futures_rustls::TlsConnector;
 use http::header::{CONTENT_LENGTH, TRANSFER_ENCODING};
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
-use rustls::{ClientConfig, ClientConnection, StreamOwned};
-use std::io::{self, ErrorKind, Read as IoRead, Write as IoWrite};
+use rustls::ClientConfig;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::str;
 use std::sync::Arc;
@@ -22,48 +23,12 @@ const READ_BUFFER_SIZE: usize = 8 * 1024;
 /// arbitrary guard against unbounded buffering.
 const MAX_HEAD_SIZE: usize = 64 * 1024;
 
-/// Trait that combines [`IoWrite`] and [`IoRead`].
+/// Trait that combines [`AsyncRead`] and [`AsyncWrite`].
 ///
 /// This trait abstracts over a `Tcp<Data>` Stream or a `Tcp<Tls<Data>>` stream.
-trait IoReadAndWrite: IoWrite + IoRead {}
+trait AsyncReadAndWrite: AsyncRead + AsyncWrite + Unpin + Send {}
 
-impl<T: IoRead + IoWrite> IoReadAndWrite for T {}
-
-/// A TCP stream whose reads and writes fail when the deadline passes.
-///
-/// Socket timeouts only limit a single read or write, so each one is
-/// limited to the time that remains until the deadline.
-struct DeadlineStream {
-    tcp: TcpStream,
-    deadline: Deadline,
-}
-
-impl DeadlineStream {
-    /// Returns the time until the deadline.
-    fn remaining(&self) -> io::Result<Duration> {
-        self.deadline
-            .remaining()
-            .map_err(|_| io::Error::from(ErrorKind::TimedOut))
-    }
-}
-
-impl IoRead for DeadlineStream {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.tcp.set_read_timeout(Some(self.remaining()?))?;
-        self.tcp.read(buf)
-    }
-}
-
-impl IoWrite for DeadlineStream {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.tcp.set_write_timeout(Some(self.remaining()?))?;
-        self.tcp.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.tcp.flush()
-    }
-}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> AsyncReadAndWrite for T {}
 
 /// How the end of a response body was determined.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,13 +66,13 @@ fn build_request(url: &Url) -> String {
 ///
 /// Returns the head of the final response and how the end of its body was
 /// determined.
-fn read_response(
-    tcp: &mut dyn IoReadAndWrite,
+async fn read_response(
+    tcp: &mut dyn AsyncReadAndWrite,
     first_byte: u8,
 ) -> Result<(ResponseHead, Framing), TtfbError> {
     let mut response = vec![first_byte];
     let (head_len, status, headers) = loop {
-        let (head_len, status, headers) = read_head(tcp, &mut response)?;
+        let (head_len, status, headers) = read_head(tcp, &mut response).await?;
         // Skip interim responses. 101 Switching Protocols is a final response.
         if status.is_informational() && status != StatusCode::SWITCHING_PROTOCOLS {
             // The buffer may already hold (parts of) the next response.
@@ -117,7 +82,7 @@ fn read_response(
         }
     };
     let body = response.split_off(head_len);
-    let framing = read_body(tcp, status, &headers, body)?;
+    let framing = read_body(tcp, status, &headers, body).await?;
     Ok((ResponseHead { status, headers }, framing))
 }
 
@@ -125,8 +90,8 @@ fn read_response(
 /// body bytes that arrived together with the head.
 ///
 /// Returns how the end of the body was determined.
-fn read_body(
-    tcp: &mut dyn IoReadAndWrite,
+async fn read_body(
+    tcp: &mut dyn AsyncReadAndWrite,
     status: StatusCode,
     headers: &HeaderMap,
     body: Vec<u8>,
@@ -153,7 +118,9 @@ fn read_body(
         .and_then(|value| value.rsplit(',').next())
         .is_some_and(|coding| coding.trim().eq_ignore_ascii_case("chunked"));
     if transfer_is_chunked {
-        return read_chunked_body(tcp, body).map(|()| Framing::Chunked);
+        return read_chunked_body(tcp, body)
+            .await
+            .map(|()| Framing::Chunked);
     }
 
     // A fixed-length body ends after Content-Length bytes.
@@ -169,6 +136,7 @@ fn read_body(
         while remaining > 0 {
             let count = remaining.min(buffer.len());
             tcp.read_exact(&mut buffer[..count])
+                .await
                 .map_err(TtfbError::CantConnectHttp)?;
             remaining -= count;
         }
@@ -178,7 +146,10 @@ fn read_body(
     // Without explicit framing, the body ends when the server closes the connection.
     let mut buffer = [0_u8; READ_BUFFER_SIZE];
     loop {
-        let read = tcp.read(&mut buffer).map_err(TtfbError::CantConnectHttp)?;
+        let read = tcp
+            .read(&mut buffer)
+            .await
+            .map_err(TtfbError::CantConnectHttp)?;
         if read == /* EOF */ 0 {
             return Ok(Framing::CloseDelimited);
         }
@@ -186,8 +157,8 @@ fn read_body(
 }
 
 /// Reads until `response` holds a complete response head and parses its status code and headers.
-fn read_head(
-    tcp: &mut dyn IoReadAndWrite,
+async fn read_head(
+    tcp: &mut dyn AsyncReadAndWrite,
     response: &mut Vec<u8>,
 ) -> Result<(usize, StatusCode, HeaderMap), TtfbError> {
     loop {
@@ -222,7 +193,7 @@ fn read_head(
                         "response headers exceed 64 KiB".into(),
                     ));
                 }
-                read_more(tcp, response)?;
+                read_more(tcp, response).await?;
             }
             Err(error) => {
                 return Err(TtfbError::InvalidHttpResponse(format!(
@@ -262,14 +233,17 @@ fn content_length(headers: &HeaderMap) -> Result<Option<usize>, TtfbError> {
 /// followed by extensions) and its data is followed by CRLF. A chunk of size
 /// zero ends the body. It is followed by optional trailer fields and an empty
 /// line.
-fn read_chunked_body(tcp: &mut dyn IoReadAndWrite, mut body: Vec<u8>) -> Result<(), TtfbError> {
+async fn read_chunked_body(
+    tcp: &mut dyn AsyncReadAndWrite,
+    mut body: Vec<u8>,
+) -> Result<(), TtfbError> {
     loop {
         // Wait for the complete chunk-size line.
         let line_end = loop {
             if let Some(index) = find_bytes(&body, b"\r\n") {
                 break index;
             }
-            read_more(tcp, &mut body)?;
+            read_more(tcp, &mut body).await?;
         };
         // Parse the hex size and ignore chunk extensions after ';'.
         let chunk_size = str::from_utf8(&body[..line_end])
@@ -285,13 +259,13 @@ fn read_chunked_body(tcp: &mut dyn IoReadAndWrite, mut body: Vec<u8>) -> Result<
                 if trailers.starts_with(b"\r\n") || find_bytes(trailers, b"\r\n\r\n").is_some() {
                     return Ok(());
                 }
-                read_more(tcp, &mut body)?;
+                read_more(tcp, &mut body).await?;
             }
         }
         // Wait for the chunk data and its CRLF, then drop the whole chunk.
         let chunk_end = line_end + 2 /* CRLF */ + chunk_size + 2 /* CRLF */;
         while body.len() < chunk_end {
-            read_more(tcp, &mut body)?;
+            read_more(tcp, &mut body).await?;
         }
         if &body[chunk_end - 2 /* CRLF */..chunk_end] != b"\r\n" {
             return Err(TtfbError::InvalidHttpResponse(
@@ -306,9 +280,12 @@ fn read_chunked_body(tcp: &mut dyn IoReadAndWrite, mut body: Vec<u8>) -> Result<
 ///
 /// Fails if the connection was closed, as the caller still expects more data
 /// for a complete response.
-fn read_more(tcp: &mut dyn IoReadAndWrite, buffer: &mut Vec<u8>) -> Result<(), TtfbError> {
+async fn read_more(tcp: &mut dyn AsyncReadAndWrite, buffer: &mut Vec<u8>) -> Result<(), TtfbError> {
     let mut chunk = [0_u8; READ_BUFFER_SIZE];
-    let read = tcp.read(&mut chunk).map_err(TtfbError::CantConnectHttp)?;
+    let read = tcp
+        .read(&mut chunk)
+        .await
+        .map_err(TtfbError::CantConnectHttp)?;
     if read == /* EOF */ 0 {
         return Err(TtfbError::InvalidHttpResponse(
             "connection closed before the response was complete".into(),
@@ -324,44 +301,33 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-/// Initializes the TCP connection to the IP address until `deadline`.
-/// Measures the duration.
-fn tcp_connect(
-    addr: IpAddr,
-    port: u16,
-    deadline: Deadline,
-) -> Result<(DeadlineStream, Duration), TtfbError> {
+/// Initializes the TCP connection to the IP address. Measures the duration.
+async fn tcp_connect(addr: IpAddr, port: u16) -> Result<(Async<TcpStream>, Duration), TtfbError> {
     let addr_w_port = SocketAddr::from((addr, port));
     let now = Instant::now();
-    let tcp = TcpStream::connect_timeout(&addr_w_port, deadline.remaining()?)
+    let tcp = Async::<TcpStream>::connect(addr_w_port)
+        .await
         .map_err(TtfbError::CantConnectTcp)?;
-    let mut tcp = DeadlineStream { tcp, deadline };
-    tcp.flush().map_err(TtfbError::OtherStreamError)?;
     let tcp_connect_duration = now.elapsed();
     Ok((tcp, tcp_connect_duration))
 }
 
 /// If the scheme is "https", this replaces the TCP-Stream with a `TLS<TCP>`-stream.
 /// If TLS is used, it measures the time of the TLS handshake.
-fn tls_handshake_if_necessary(
-    mut tcp: DeadlineStream,
+async fn tls_handshake_if_necessary(
+    tcp: Async<TcpStream>,
     url: &Url,
     tls_config: Arc<ClientConfig>,
-) -> Result<(Box<dyn IoReadAndWrite>, Option<Duration>), TtfbError> {
+) -> Result<(Box<dyn AsyncReadAndWrite>, Option<Duration>), TtfbError> {
     if url.scheme() == "https" {
         let server_name = tls::server_name(url)?;
         let now = Instant::now();
-        let mut connection = ClientConnection::new(tls_config, server_name)
-            .map_err(|error| TtfbError::Tls(error.to_string()))?;
-        // Performs IO until the handshake is complete.
-        connection
-            .complete_io(&mut tcp)
+        let tls = TlsConnector::from(tls_config)
+            .connect(server_name, tcp)
+            .await
             .map_err(|error| TtfbError::Tls(error.to_string()))?;
         let tls_handshake_duration = now.elapsed();
-        Ok((
-            Box::new(StreamOwned::new(connection, tcp)),
-            Some(tls_handshake_duration),
-        ))
+        Ok((Box::new(tls), Some(tls_handshake_duration)))
     } else {
         Ok((Box::new(tcp), None))
     }
@@ -369,24 +335,24 @@ fn tls_handshake_if_necessary(
 
 /// Measures one GET request via HTTP/1.1: TCP connect, the TLS handshake for
 /// HTTPS, sending the request, the first response byte, and the download of
-/// the complete response. Reads and writes fail when `deadline` passes.
-pub fn measure(
+/// the complete response.
+pub async fn measure(
     target: &Target,
     tls_config: Arc<ClientConfig>,
-    deadline: Deadline,
 ) -> Result<TtfbOutcome, TtfbError> {
     // Connect, with a TLS handshake for HTTPS.
-    let (tcp, tcp_connect_duration) = tcp_connect(target.address, target.port, deadline)?;
+    let (tcp, tcp_connect_duration) = tcp_connect(target.address, target.port).await?;
     let (mut tcp, tls_handshake_duration) =
-        tls_handshake_if_necessary(tcp, &target.url, tls_config)?;
+        tls_handshake_if_necessary(tcp, &target.url, tls_config).await?;
 
     // Send the request.
     let http_get_send_duration = {
         let header = build_request(&target.url);
         let now = Instant::now();
         tcp.write_all(header.as_bytes())
+            .await
             .map_err(TtfbError::CantConnectHttp)?;
-        tcp.flush().map_err(TtfbError::OtherStreamError)?;
+        tcp.flush().await.map_err(TtfbError::OtherStreamError)?;
         now.elapsed()
     };
 
@@ -395,6 +361,7 @@ pub fn measure(
     let http_ttfb_duration = {
         let now = Instant::now();
         tcp.read_exact(&mut first_byte)
+            .await
             .map_err(|_e| TtfbError::NoHttpResponse)?;
         now.elapsed()
     };
@@ -402,7 +369,7 @@ pub fn measure(
     // Read the rest of the response.
     let (response, http_content_download_duration) = {
         let now = Instant::now();
-        let (response, _) = read_response(tcp.as_mut(), first_byte[0])?;
+        let (response, _) = read_response(tcp.as_mut(), first_byte[0]).await?;
         (response, now.elapsed())
     };
 
@@ -428,11 +395,12 @@ pub fn measure(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
+    use futures_lite::future::block_on;
+    use futures_lite::io::Cursor;
 
     fn parse_response(response: &[u8]) -> Result<Framing, TtfbError> {
         let mut stream = Cursor::new(response[1..].to_vec());
-        read_response(&mut stream, response[0]).map(|(_, framing)| framing)
+        block_on(read_response(&mut stream, response[0])).map(|(_, framing)| framing)
     }
 
     #[test]
@@ -486,7 +454,7 @@ mod tests {
     fn returns_head_of_final_response() {
         let response = b"HTTP/1.1 103 Early Hints\r\nLink: </style.css>\r\n\r\nHTTP/1.1 404 Not Found\r\nServer: test\r\nContent-Length: 0\r\n\r\n";
         let mut stream = Cursor::new(response[1..].to_vec());
-        let (head, _) = read_response(&mut stream, response[0]).unwrap();
+        let (head, _) = block_on(read_response(&mut stream, response[0])).unwrap();
         assert_eq!(head.status, StatusCode::NOT_FOUND);
         assert_eq!(head.headers.get("server").unwrap(), "test");
         assert!(head.headers.get("link").is_none());
@@ -527,16 +495,23 @@ mod network_tests {
     /// Requests `url` and returns how the response body was framed.
     fn framing_of(url: &str) -> Result<Framing, TtfbError> {
         let target = Target::resolve(url, IpVersion::Any, Deadline::for_tests())?;
-        let (tcp, _) = tcp_connect(target.address, target.port, Deadline::for_tests())?;
-        let (mut stream, _) = tls_handshake_if_necessary(tcp, &target.url, tls::config(false))?;
-        stream
-            .write_all(build_request(&target.url).as_bytes())
-            .map_err(TtfbError::CantConnectHttp)?;
-        let mut first_byte = [0];
-        stream
-            .read_exact(&mut first_byte)
-            .map_err(|_| TtfbError::NoHttpResponse)?;
-        read_response(stream.as_mut(), first_byte[0]).map(|(_, framing)| framing)
+        async_io::block_on(Deadline::for_tests().run(async {
+            let (tcp, _) = tcp_connect(target.address, target.port).await?;
+            let (mut stream, _) =
+                tls_handshake_if_necessary(tcp, &target.url, tls::config(false)).await?;
+            stream
+                .write_all(build_request(&target.url).as_bytes())
+                .await
+                .map_err(TtfbError::CantConnectHttp)?;
+            let mut first_byte = [0];
+            stream
+                .read_exact(&mut first_byte)
+                .await
+                .map_err(|_| TtfbError::NoHttpResponse)?;
+            read_response(stream.as_mut(), first_byte[0])
+                .await
+                .map(|(_, framing)| framing)
+        }))
     }
 
     #[test]
