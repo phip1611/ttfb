@@ -50,17 +50,17 @@ pub use http::{HeaderMap, StatusCode};
 pub use outcome::{ConnectionHandshake, DurationPair, HttpProtocol, TtfbOutcome};
 
 #[cfg(any(feature = "http2", feature = "http3"))]
-use futures_lite::future;
-use std::{panic, thread};
-use tokio::runtime::Builder;
-#[cfg(any(feature = "http2", feature = "http3"))]
 use {
+    futures_lite::future,
     http::header::{ACCEPT, ACCEPT_ENCODING, USER_AGENT},
+    std::{panic, thread},
+    tokio::runtime::Builder,
     url::Url,
 };
 
 mod client;
 mod deadline;
+mod dns;
 mod error;
 mod http11;
 #[cfg(feature = "http2")]
@@ -81,6 +81,7 @@ const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// overhead is negligible.
 ///
 /// More info: <https://stackoverflow.com/a/62536772/2891595>
+#[cfg(any(feature = "http2", feature = "http3"))]
 fn run_in_tokio<F>(future: F) -> F::Output
 where
     F: Future + Send,

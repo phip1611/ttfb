@@ -3,12 +3,10 @@
 //! URL parsing and DNS resolution of the measurement target.
 
 use crate::deadline::Deadline;
-use crate::{InvalidUrlError, IpVersion, ResolveDnsError, TtfbError, run_in_tokio};
-use hickory_resolver::Resolver as DnsResolver;
-use hickory_resolver::config::LookupIpStrategy;
+use crate::{InvalidUrlError, IpVersion, TtfbError, dns};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use url::Url;
 
 /// Parses the string input into an [`Url`] object.
@@ -54,10 +52,9 @@ const fn check_ip_version(addr: IpAddr, ip_version: IpVersion) -> Result<(), Ttf
 }
 
 /// Checks from the URL if we already have an IP address or not.
-/// If the user gave us a domain name, we resolve it using the
-/// [`hickory_resolver`] crate and measure the time for it. The address has
-/// the IP version `ip_version`.
-fn resolve_dns_if_necessary(
+/// If the user gave us a domain name, we resolve it with [`dns::lookup`] and
+/// measure the time for it. The address has the IP version `ip_version`.
+async fn resolve_dns_if_necessary(
     url: &Url,
     ip_version: IpVersion,
     deadline: Deadline,
@@ -72,7 +69,9 @@ fn resolve_dns_if_necessary(
                 };
                 Ok((localhost, Some(Duration::default())))
             } else {
-                resolve_dns(url, ip_version, deadline).map(|(addr, dur)| (addr, Some(dur)))
+                let host = domain.to_owned();
+                let (addr, duration) = dns::lookup(host, ip_version, deadline).await?;
+                Ok((addr, Some(duration)))
             }
         }
         None => {
@@ -88,60 +87,6 @@ fn resolve_dns_if_necessary(
 
             Ok((addr, None))
         }
-    }
-}
-
-/// Actually resolves a domain using the systems default DNS resolver.
-/// Helper function for [`resolve_dns_if_necessary`].
-fn resolve_dns(
-    url: &Url,
-    ip_version: IpVersion,
-    deadline: Deadline,
-) -> Result<(IpAddr, Duration), TtfbError> {
-    // Construct a new DNS Resolver.
-    // On Unix/Posix systems, this will read: /etc/resolv.conf
-    // In the end, this uses the name server of the system or falls back to
-    // the library's default (usually Google DNS).
-    let mut builder = DnsResolver::builder_tokio()
-        .map_err(|error| TtfbError::CantConfigureDNSError(error.to_string()))?;
-    builder.options_mut().ip_strategy = match ip_version {
-        IpVersion::Any => LookupIpStrategy::Ipv4thenIpv6,
-        IpVersion::V4 => LookupIpStrategy::Ipv4Only,
-        IpVersion::V6 => LookupIpStrategy::Ipv6Only,
-    };
-    let resolver = builder.build();
-
-    // hickory_resolver requires Tokio. Starting the runtime and its thread
-    // doesn't count as part of the lookup.
-    let (response, duration) = run_in_tokio(deadline.run(async {
-        let begin = Instant::now();
-        let response = resolver
-            .lookup_ip(url.host_str().unwrap())
-            .await
-            .map(|res| res.iter().collect::<Vec<IpAddr>>())
-            .map_err(|err| {
-                if ip_version != IpVersion::Any && err.is_no_records_found() {
-                    TtfbError::NoAddressForIpVersion(ip_version)
-                } else {
-                    TtfbError::CantResolveDns(ResolveDnsError::Other(err.to_string()))
-                }
-            })?;
-        Ok((response, begin.elapsed()))
-    }))?;
-
-    let ipv4_addr = response.iter().find(|addr| addr.is_ipv4());
-    let ipv6_addr = response.iter().find(|addr| addr.is_ipv6());
-    let addr = match ip_version {
-        IpVersion::Any => ipv4_addr.or(ipv6_addr),
-        IpVersion::V4 => ipv4_addr,
-        IpVersion::V6 => ipv6_addr,
-    };
-    match addr {
-        Some(addr) => Ok((*addr, duration)),
-        None if ip_version == IpVersion::Any => {
-            Err(TtfbError::CantResolveDns(ResolveDnsError::NoResults))
-        }
-        None => Err(TtfbError::NoAddressForIpVersion(ip_version)),
     }
 }
 
@@ -165,7 +110,7 @@ impl Target {
     /// the IP version `ip_version` until `deadline`.
     ///
     /// `input` without a scheme defaults to `http://`.
-    pub fn resolve(
+    pub async fn resolve(
         input: &str,
         ip_version: IpVersion,
         deadline: Deadline,
@@ -176,7 +121,7 @@ impl Target {
         let input = prepend_default_scheme_if_necessary(input.to_owned());
         let url = parse_input_as_url(&input)?;
         check_scheme_is_allowed(&url)?;
-        let (address, dns_duration) = resolve_dns_if_necessary(&url, ip_version, deadline)?;
+        let (address, dns_duration) = resolve_dns_if_necessary(&url, ip_version, deadline).await?;
         let port = url
             .port_or_known_default()
             .expect("http and https URLs should have a known default port");
@@ -193,6 +138,7 @@ impl Target {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_io::block_on;
 
     #[test]
     fn test_parse_input_as_url() {
@@ -240,7 +186,11 @@ mod tests {
     fn test_dns_if_necessary_localhost_shortcut() {
         let url = url::Url::from_str("http://localhost").unwrap();
         assert_eq!(
-            resolve_dns_if_necessary(&url, IpVersion::Any, Deadline::for_tests()),
+            block_on(resolve_dns_if_necessary(
+                &url,
+                IpVersion::Any,
+                Deadline::for_tests()
+            )),
             Ok((
                 IpAddr::from_str("127.0.0.1").unwrap(),
                 Some(Duration::from_secs(0))
@@ -275,7 +225,12 @@ mod tests {
 
     #[test]
     fn resolve_defaults_to_http() {
-        let target = Target::resolve("localhost", IpVersion::Any, Deadline::for_tests()).unwrap();
+        let target = block_on(Target::resolve(
+            "localhost",
+            IpVersion::Any,
+            Deadline::for_tests(),
+        ))
+        .unwrap();
         assert_eq!(target.input, "http://localhost");
         assert_eq!(target.port, 80);
     }
@@ -287,7 +242,12 @@ mod tests {
             (IpVersion::V4, "127.0.0.1"),
             (IpVersion::V6, "::1"),
         ] {
-            let target = Target::resolve("localhost", ip_version, Deadline::for_tests()).unwrap();
+            let target = block_on(Target::resolve(
+                "localhost",
+                ip_version,
+                Deadline::for_tests(),
+            ))
+            .unwrap();
             assert_eq!(target.address, IpAddr::from_str(expected).unwrap());
         }
     }
@@ -295,7 +255,8 @@ mod tests {
     #[test]
     fn resolve_ip_address_with_ip_version() {
         let resolve = |input, ip_version| {
-            Target::resolve(input, ip_version, Deadline::for_tests()).map(|target| target.address)
+            block_on(Target::resolve(input, ip_version, Deadline::for_tests()))
+                .map(|target| target.address)
         };
         let ipv4 = IpAddr::from_str("1.1.1.1").unwrap();
         let ipv6 = IpAddr::from_str("::1").unwrap();
@@ -316,7 +277,7 @@ mod tests {
     #[test]
     fn resolve_rejects_empty_input() {
         assert_eq!(
-            Target::resolve("", IpVersion::Any, Deadline::for_tests()).unwrap_err(),
+            block_on(Target::resolve("", IpVersion::Any, Deadline::for_tests())).unwrap_err(),
             TtfbError::InvalidUrl(InvalidUrlError::MissingInput)
         );
     }
@@ -326,6 +287,7 @@ mod tests {
 #[cfg(all(test, network_tests))]
 mod network_tests {
     use super::*;
+    use async_io::block_on;
 
     #[test]
     fn test_resolve_dns_if_necessary() {
@@ -336,25 +298,49 @@ mod network_tests {
         let url5 = Url::from_str("http://[2001:0db8:3c4d:0015:0000:0000:1a2f:1a2b]")
             .expect("must be valid");
 
-        resolve_dns_if_necessary(&url1, IpVersion::Any, Deadline::for_tests())
-            .expect("must be valid");
-        resolve_dns_if_necessary(&url2, IpVersion::Any, Deadline::for_tests())
-            .expect("must be valid");
-        resolve_dns_if_necessary(&url3, IpVersion::Any, Deadline::for_tests())
-            .expect("must be valid");
-        resolve_dns_if_necessary(&url4, IpVersion::Any, Deadline::for_tests())
-            .expect("must be valid");
-        resolve_dns_if_necessary(&url5, IpVersion::Any, Deadline::for_tests())
-            .expect("must be valid");
+        block_on(resolve_dns_if_necessary(
+            &url1,
+            IpVersion::Any,
+            Deadline::for_tests(),
+        ))
+        .expect("must be valid");
+        block_on(resolve_dns_if_necessary(
+            &url2,
+            IpVersion::Any,
+            Deadline::for_tests(),
+        ))
+        .expect("must be valid");
+        block_on(resolve_dns_if_necessary(
+            &url3,
+            IpVersion::Any,
+            Deadline::for_tests(),
+        ))
+        .expect("must be valid");
+        block_on(resolve_dns_if_necessary(
+            &url4,
+            IpVersion::Any,
+            Deadline::for_tests(),
+        ))
+        .expect("must be valid");
+        block_on(resolve_dns_if_necessary(
+            &url5,
+            IpVersion::Any,
+            Deadline::for_tests(),
+        ))
+        .expect("must be valid");
     }
 
     #[test]
     fn resolve_dns_with_ip_version() {
         // one.one.one.one has IPv4 and IPv6 addresses.
         let address = |ip_version| {
-            Target::resolve("one.one.one.one", ip_version, Deadline::for_tests())
-                .unwrap()
-                .address
+            block_on(Target::resolve(
+                "one.one.one.one",
+                ip_version,
+                Deadline::for_tests(),
+            ))
+            .unwrap()
+            .address
         };
         assert!(address(IpVersion::Any).is_ipv4());
         assert!(address(IpVersion::V4).is_ipv4());
@@ -365,7 +351,12 @@ mod network_tests {
     fn resolve_dns_without_address_of_ip_version() {
         // ipv4.google.com only has IPv4 addresses.
         assert_eq!(
-            Target::resolve("ipv4.google.com", IpVersion::V6, Deadline::for_tests()).unwrap_err(),
+            block_on(Target::resolve(
+                "ipv4.google.com",
+                IpVersion::V6,
+                Deadline::for_tests()
+            ))
+            .unwrap_err(),
             TtfbError::NoAddressForIpVersion(IpVersion::V6)
         );
     }

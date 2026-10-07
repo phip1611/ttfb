@@ -494,7 +494,8 @@ mod network_tests {
 
     /// Requests `url` and returns how the response body was framed.
     fn framing_of(url: &str) -> Result<Framing, TtfbError> {
-        let target = Target::resolve(url, IpVersion::Any, Deadline::for_tests())?;
+        let target =
+            async_io::block_on(Target::resolve(url, IpVersion::Any, Deadline::for_tests()))?;
         async_io::block_on(Deadline::for_tests().run(async {
             let (tcp, _) = tcp_connect(target.address, target.port).await?;
             let (mut stream, _) =

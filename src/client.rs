@@ -200,7 +200,11 @@ impl TtfbClient {
     pub fn measure(&self, input: impl AsRef<str>) -> Result<TtfbOutcome, TtfbError> {
         self.validate()?;
         let deadline = Deadline::after(self.options.timeout);
-        let target = Target::resolve(input.as_ref(), self.options.ip_version, deadline)?;
+        let target = async_io::block_on(Target::resolve(
+            input.as_ref(),
+            self.options.ip_version,
+            deadline,
+        ))?;
         let outcome = match self.options.protocol {
             ProtocolSelection::Auto => self.measure_auto(&target, deadline),
             ProtocolSelection::Only(HttpProtocol::Http11) => self.measure_http11(&target, deadline),

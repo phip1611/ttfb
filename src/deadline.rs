@@ -51,15 +51,15 @@ impl Deadline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::run_in_tokio;
+    use async_io::block_on;
     use std::future::pending;
 
     #[test]
     fn run() {
         let deadline = Deadline::after(Duration::from_millis(10));
-        let result = run_in_tokio(deadline.run(pending::<Result<(), _>>()));
+        let result = block_on(deadline.run(pending::<Result<(), _>>()));
         assert_eq!(result, Err(TtfbError::Timeout(Duration::from_millis(10))));
         let deadline = Deadline::after(Duration::from_secs(10));
-        assert_eq!(run_in_tokio(deadline.run(async { Ok(()) })), Ok(()));
+        assert_eq!(block_on(deadline.run(async { Ok(()) })), Ok(()));
     }
 }

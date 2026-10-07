@@ -170,8 +170,12 @@ mod tests {
 
     #[test]
     fn requires_https() {
-        let target =
-            Target::resolve("http://localhost:1", IpVersion::Any, Deadline::for_tests()).unwrap();
+        let target = async_io::block_on(Target::resolve(
+            "http://localhost:1",
+            IpVersion::Any,
+            Deadline::for_tests(),
+        ))
+        .unwrap();
         let result = run_in_tokio(measure(&target, tls::config(false)));
         assert!(matches!(result, Err(TtfbError::UnsupportedHttpProtocol(_))));
     }
