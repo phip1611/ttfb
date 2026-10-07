@@ -24,6 +24,7 @@
 use clap::Parser;
 use crossterm::ExecutableCommand;
 use crossterm::style::{Attribute, SetAttribute};
+use serde_json::to_string;
 use std::array;
 use std::fmt::{self, Display, Formatter};
 use std::io::stdout;
@@ -31,7 +32,7 @@ use std::net::SocketAddr;
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::process::exit;
 use std::str::FromStr;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 use ttfb::{
     ConnectionHandshake, DurationPair, HttpProtocol, IpVersion, ProtocolSelection, TtfbClient,
     TtfbError, TtfbOptions, TtfbOutcome,
@@ -42,14 +43,29 @@ const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// DNS lookups faster than this (in ms) were probably answered by a cache.
 const DNS_CACHED_MS: f64 = 2.0;
 
-// The labels of the steps in the output.
-const DNS_LOOKUP_STEP: &str = "DNS Lookup";
-const TCP_CONNECT_STEP: &str = "TCP Connect";
-const TLS_HANDSHAKE_STEP: &str = "TLS Handshake";
-const QUIC_HANDSHAKE_STEP: &str = "QUIC Handshake";
-const HTTP_SEND_GET_STEP: &str = "HTTP Send GET";
-const TTFB_STEP: &str = "HTTP Resp TTFB";
-const HTTP_DOWNLOAD_STEP: &str = "HTTP Download";
+/// The names of a step in the output.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct StepName {
+    /// The label in the table, e.g., "TCP Connect".
+    label: &'static str,
+    /// The key in the JSON output, e.g., "tcp_connect".
+    key: &'static str,
+}
+
+impl StepName {
+    const fn new(label: &'static str, key: &'static str) -> Self {
+        Self { label, key }
+    }
+}
+
+// The names of the steps in the output.
+const DNS_LOOKUP_STEP: StepName = StepName::new("DNS Lookup", "dns_lookup");
+const TCP_CONNECT_STEP: StepName = StepName::new("TCP Connect", "tcp_connect");
+const TLS_HANDSHAKE_STEP: StepName = StepName::new("TLS Handshake", "tls_handshake");
+const QUIC_HANDSHAKE_STEP: StepName = StepName::new("QUIC Handshake", "quic_handshake");
+const HTTP_SEND_GET_STEP: StepName = StepName::new("HTTP Send GET", "http_get_send");
+const TTFB_STEP: StepName = StepName::new("HTTP Resp TTFB", "ttfb");
+const HTTP_DOWNLOAD_STEP: StepName = StepName::new("HTTP Download", "http_content_download");
 
 macro_rules! unwrap_or_exit {
     ($ident:ident) => {
@@ -160,6 +176,9 @@ struct TtfbArgs {
     /// print those of the first measurement.
     #[arg(long)]
     headers: bool,
+    /// Print the results only as JSON in a single line.
+    #[arg(long, conflicts_with = "headers")]
+    json: bool,
 }
 
 /// Small CLI binary wrapper around the [`ttfb`] lib.
@@ -187,7 +206,19 @@ fn main() {
         timeout: Duration::from_secs(input.timeout),
         ip_version,
     };
-    if let Some(repeat) = input.repeat {
+    if input.json {
+        // Without --repeat, a single run is one measurement.
+        let repeat = input
+            .repeat
+            .unwrap_or(RepeatInput::Times(NonZeroUsize::MIN));
+        let json_options = json::JsonOptions::new(&input.host, &options, repeat);
+        let started_at = SystemTime::now();
+        let result = measure_repeatedly(options, &input.host, repeat);
+        print_json(json_options, started_at, &result);
+        if result.is_err() {
+            exit(-1);
+        }
+    } else if let Some(repeat) = input.repeat {
         let res = measure_repeatedly(options, &input.host, repeat);
         let outcomes = unwrap_or_exit!(res);
         print_statistics(&outcomes).unwrap();
@@ -257,8 +288,8 @@ fn print_title(ttfb: &TtfbOutcome) {
 /// A step of a measurement.
 #[derive(Debug)]
 struct Step {
-    /// The label in the table, e.g., "TCP Connect".
-    label: &'static str,
+    /// The names of the step in the output.
+    name: StepName,
     /// The duration of the step itself.
     relative: Duration,
     /// The duration from the start of the measurement to the end of the step.
@@ -266,9 +297,9 @@ struct Step {
 }
 
 impl Step {
-    const fn new(label: &'static str, duration: DurationPair) -> Self {
+    const fn new(name: StepName, duration: DurationPair) -> Self {
         Self {
-            label,
+            name,
             relative: duration.relative(),
             absolute: duration.total(),
         }
@@ -417,7 +448,7 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
         .map_err(|err| err.to_string())?;
 
     for (step, abs_stats, rel_stats) in steps_to_stats {
-        let label = step.label;
+        let label = step.name.label;
         let [_, rel_median, _, _] = rel_stats;
         let cells: [String; 4] =
             array::from_fn(|i| fmt_cell(&format_ms(abs_stats[i]), &format_ms(rel_stats[i])));
@@ -426,10 +457,10 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
             cells.each_ref().map(String::as_str),
         );
         // The first lookup may miss the cache, so judge by the median.
-        if label == DNS_LOOKUP_STEP && rel_median < DNS_CACHED_MS {
+        if step.name == DNS_LOOKUP_STEP && rel_median < DNS_CACHED_MS {
             line.push_str("  (probably cached)");
         }
-        if label == TTFB_STEP {
+        if step.name == TTFB_STEP {
             stdout()
                 .execute(SetAttribute(Attribute::Bold))
                 .map_err(|err| err.to_string())?;
@@ -443,6 +474,17 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Prints the JSON output of the measurements that started at `started_at`.
+fn print_json(
+    options: json::JsonOptions,
+    started_at: SystemTime,
+    result: &Result<Vec<TtfbOutcome>, TtfbError>,
+) {
+    let output = json::JsonOutput::new(options, started_at, result);
+    let json = to_string(&output).expect("should serialize, as all map keys are strings");
+    println!("{json}");
 }
 
 /// Prints the status line and the headers of the response.
@@ -477,7 +519,7 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
         .map_err(|err| err.to_string())?;
 
     for step in Step::all(ttfb) {
-        let label = step.label;
+        let label = step.name.label;
         let rel_ms = step.relative.as_secs_f64() * 1000.0;
         let abs_ms = step.absolute.as_secs_f64() * 1000.0;
         let mut line = format!(
@@ -485,10 +527,10 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
             format_ms(rel_ms),
             format_ms(abs_ms)
         );
-        if label == DNS_LOOKUP_STEP && rel_ms < DNS_CACHED_MS {
+        if step.name == DNS_LOOKUP_STEP && rel_ms < DNS_CACHED_MS {
             line.push_str("  (probably cached)");
         }
-        if label == TTFB_STEP {
+        if step.name == TTFB_STEP {
             stdout()
                 .execute(SetAttribute(Attribute::Bold))
                 .map_err(|err| err.to_string())?;
@@ -502,6 +544,354 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// The JSON output of the measurements.
+///
+/// Its only export is [`JsonOutput`], which [`JsonOutput::new`] creates from
+/// the measurements or their error, and which serializes to the JSON format.
+mod json {
+    use super::{CRATE_VERSION, RepeatInput, calc_statistics_from_durations, step_durations};
+    use humantime::format_rfc3339_millis;
+    use serde::{Serialize, Serializer};
+    use serde_json::value::RawValue;
+    use std::collections::BTreeMap;
+    use std::net::IpAddr;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use ttfb::{IpVersion, ProtocolSelection, TtfbError, TtfbOptions, TtfbOutcome};
+
+    /// The version of the JSON output. It increases with incompatible changes.
+    const JSON_SCHEMA_VERSION: u32 = 1;
+
+    /// Serializes `ms` with the precision of the text output. Otherwise, JSON
+    /// would show floating-point noise such as `0.011871999999999999`.
+    fn serialize_ms<S: Serializer>(ms: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+        RawValue::from_string(format!("{ms:.3}"))
+            .expect("should be a valid JSON number, as durations are finite")
+            .serialize(serializer)
+    }
+
+    /// The statistics of a step in the JSON output, in ms.
+    #[derive(Debug, Serialize)]
+    struct JsonStatistics {
+        #[serde(serialize_with = "serialize_ms")]
+        min: f64,
+        #[serde(serialize_with = "serialize_ms")]
+        median: f64,
+        #[serde(serialize_with = "serialize_ms")]
+        mean: f64,
+        #[serde(serialize_with = "serialize_ms")]
+        max: f64,
+    }
+
+    impl JsonStatistics {
+        /// Returns the statistics of `durations`.
+        fn of(durations: &[Duration]) -> Self {
+            let [min, median, mean, max] = calc_statistics_from_durations(durations);
+            Self {
+                min,
+                median,
+                mean,
+                max,
+            }
+        }
+    }
+
+    /// The statistics of the relative and the absolute duration of a step.
+    #[derive(Debug, Serialize)]
+    struct JsonDurationStatistics {
+        relative: JsonStatistics,
+        absolute: JsonStatistics,
+    }
+
+    /// The statistics of each step by its key, in the order of the steps.
+    #[derive(Debug)]
+    struct JsonStepStatistics(Vec<(&'static str, JsonDurationStatistics)>);
+
+    // A derive would emit a list of pairs and a map type would sort the
+    // keys, but the JSON object should keep the order of the steps.
+    impl Serialize for JsonStepStatistics {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            serializer.collect_map(self.0.iter().map(|(key, statistics)| (key, statistics)))
+        }
+    }
+
+    impl JsonStepStatistics {
+        /// Returns the statistics of each step over all `outcomes`.
+        fn from_outcomes(outcomes: &[TtfbOutcome]) -> Self {
+            if outcomes.is_empty() {
+                return Self(Vec::new());
+            }
+            let relative = step_durations(outcomes, |step| step.relative);
+            let absolute = step_durations(outcomes, |step| step.absolute);
+            let statistics = relative
+                .into_iter()
+                .zip(absolute)
+                .map(|((step, relative), (_, absolute))| {
+                    let statistics = JsonDurationStatistics {
+                        relative: JsonStatistics::of(&relative),
+                        absolute: JsonStatistics::of(&absolute),
+                    };
+                    (step.name.key, statistics)
+                })
+                .collect();
+            Self(statistics)
+        }
+    }
+
+    /// The target and the response of a measurement in the JSON output.
+    #[derive(Debug, Serialize)]
+    struct JsonResponse {
+        url: String,
+        ip: IpAddr,
+        port: u16,
+        protocol: String,
+        /// Whether the protocol was selected automatically ("auto") or
+        /// explicitly ("explicit").
+        protocol_selection: &'static str,
+        status: u16,
+        /// The values of each header in the order in which they were received.
+        /// Header names are in lowercase.
+        headers: BTreeMap<String, Vec<String>>,
+    }
+
+    impl JsonResponse {
+        /// Returns the response of `ttfb`.
+        fn from_outcome(ttfb: &TtfbOutcome) -> Self {
+            let mut headers = BTreeMap::<String, Vec<String>>::new();
+            for (name, value) in ttfb.headers() {
+                // Header values may contain bytes that aren't valid UTF-8.
+                let value = String::from_utf8_lossy(value.as_bytes()).into_owned();
+                headers.entry(name.to_string()).or_default().push(value);
+            }
+            Self {
+                url: ttfb.user_input().to_string(),
+                ip: ttfb.ip_addr(),
+                port: ttfb.port(),
+                protocol: ttfb.protocol().to_string(),
+                protocol_selection: match ttfb.protocol_selection() {
+                    ProtocolSelection::Auto => "auto",
+                    ProtocolSelection::Only(_) => "explicit",
+                },
+                status: ttfb.status().as_u16(),
+                headers,
+            }
+        }
+    }
+
+    /// The error of a failed measurement in the JSON output.
+    #[derive(Debug, Serialize)]
+    struct JsonError {
+        /// The kind of the error, which scripts can rely on, e.g., "timeout".
+        kind: &'static str,
+        /// The error message for humans.
+        message: String,
+    }
+
+    impl JsonError {
+        /// Returns the JSON error of `error`.
+        fn from_error(error: &TtfbError) -> Self {
+            let kind = match error {
+                TtfbError::InvalidUrl(_) => "invalid_url",
+                TtfbError::InvalidTimeout(_) => "invalid_timeout",
+                TtfbError::CantResolveDns(_) | TtfbError::CantConfigureDNSError(_) => "dns",
+                TtfbError::NoAddressForIpVersion(_) => "no_address_for_ip_version",
+                TtfbError::CantConnectTcp(_) => "tcp_connect",
+                TtfbError::Tls(_) => "tls",
+                TtfbError::CantConnectHttp(_)
+                | TtfbError::NoHttpResponse
+                | TtfbError::InvalidHttpResponse(_)
+                | TtfbError::Http2(_)
+                | TtfbError::Http3(_) => "http",
+                TtfbError::OtherStreamError(_) => "io",
+                TtfbError::UnsupportedHttpProtocol(_) => "unsupported_protocol",
+                TtfbError::Timeout(_) => "timeout",
+                _ => "other",
+            };
+            Self {
+                kind,
+                message: error.to_string(),
+            }
+        }
+    }
+
+    /// How often or how long the measurement is repeated.
+    #[derive(Debug, Serialize)]
+    #[serde(rename_all = "snake_case")]
+    enum JsonRepeat {
+        Times(usize),
+        DurationMs(u128),
+    }
+
+    /// The configuration of the measurements in the JSON output.
+    #[derive(Debug, Serialize)]
+    pub(super) struct JsonOptions {
+        /// The URL as given by the user.
+        input: String,
+        /// "auto" or the required protocol, e.g., "HTTP/2".
+        protocol: String,
+        /// "any", "ipv4", or "ipv6".
+        ip_version: &'static str,
+        allow_insecure_certificates: bool,
+        timeout_ms: u128,
+        repeat: JsonRepeat,
+    }
+
+    impl JsonOptions {
+        /// Returns the configuration of measuring `input` with `options`, as
+        /// often or as long as `repeat` says.
+        pub(super) fn new(input: &str, options: &TtfbOptions, repeat: RepeatInput) -> Self {
+            Self {
+                input: input.to_string(),
+                protocol: match options.protocol {
+                    ProtocolSelection::Auto => "auto".to_string(),
+                    ProtocolSelection::Only(protocol) => protocol.to_string(),
+                },
+                ip_version: match options.ip_version {
+                    IpVersion::Any => "any",
+                    IpVersion::V4 => "ipv4",
+                    IpVersion::V6 => "ipv6",
+                },
+                allow_insecure_certificates: options.allow_insecure_certificates,
+                timeout_ms: options.timeout.as_millis(),
+                repeat: match repeat {
+                    RepeatInput::Times(times) => JsonRepeat::Times(times.get()),
+                    RepeatInput::Duration(duration) => JsonRepeat::DurationMs(duration.as_millis()),
+                },
+            }
+        }
+    }
+
+    /// The JSON output of one or more measurements of the same target.
+    #[derive(Debug, Serialize)]
+    pub(super) struct JsonOutput {
+        schema_version: u32,
+        ttfb_version: &'static str,
+        options: JsonOptions,
+        /// When the first measurement started, in RFC 3339 format in UTC.
+        started_at: String,
+        /// When the first measurement started, as Unix timestamp in ms.
+        started_at_unix_ms: u128,
+        /// The error, if a measurement failed. Then, there are no statistics
+        /// and no response.
+        error: Option<JsonError>,
+        /// The number of measurements.
+        measurements_num: usize,
+        /// The statistics of each step over all measurements. Steps that
+        /// didn't happen are missing.
+        statistics_ms: JsonStepStatistics,
+        /// The response of the first measurement.
+        first_response: Option<JsonResponse>,
+    }
+
+    impl JsonOutput {
+        /// Creates the output of the measurements with `options` that started
+        /// at `started_at`: either all of them or the error of the one that
+        /// failed.
+        pub(super) fn new(
+            options: JsonOptions,
+            started_at: SystemTime,
+            result: &Result<Vec<TtfbOutcome>, TtfbError>,
+        ) -> Self {
+            let (outcomes, error) = match result {
+                Ok(outcomes) => (outcomes.as_slice(), None),
+                Err(error) => (&[][..], Some(JsonError::from_error(error))),
+            };
+            Self {
+                schema_version: JSON_SCHEMA_VERSION,
+                ttfb_version: CRATE_VERSION,
+                options,
+                started_at: format_rfc3339_millis(started_at).to_string(),
+                started_at_unix_ms: started_at
+                    .duration_since(UNIX_EPOCH)
+                    .expect("system time should be after the Unix epoch")
+                    .as_millis(),
+                error,
+                measurements_num: outcomes.len(),
+                statistics_ms: JsonStepStatistics::from_outcomes(outcomes),
+                first_response: outcomes.first().map(JsonResponse::from_outcome),
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use serde_json::{to_string, to_string_pretty};
+        use std::num::NonZeroUsize;
+
+        #[test]
+        fn json_step_statistics_keep_the_order_of_the_steps() {
+            let statistics = |ms| JsonStatistics {
+                min: ms,
+                median: ms,
+                mean: ms,
+                max: ms,
+            };
+            let step = |relative, absolute| JsonDurationStatistics {
+                relative: statistics(relative),
+                absolute: statistics(absolute),
+            };
+            let steps = JsonStepStatistics(vec![
+                ("ttfb", step(2.0, 5.0)),
+                ("http_content_download", step(7.0, 7.0)),
+            ]);
+            let expected = r#"{
+  "ttfb": {
+    "relative": {
+      "min": 2.000,
+      "median": 2.000,
+      "mean": 2.000,
+      "max": 2.000
+    },
+    "absolute": {
+      "min": 5.000,
+      "median": 5.000,
+      "mean": 5.000,
+      "max": 5.000
+    }
+  },
+  "http_content_download": {
+    "relative": {
+      "min": 7.000,
+      "median": 7.000,
+      "mean": 7.000,
+      "max": 7.000
+    },
+    "absolute": {
+      "min": 7.000,
+      "median": 7.000,
+      "mean": 7.000,
+      "max": 7.000
+    }
+  }
+}"#;
+            assert_eq!(to_string_pretty(&steps).unwrap(), expected);
+        }
+
+        #[test]
+        fn json_output_of_an_error() {
+            let options = JsonOptions::new(
+                "http://127.0.0.1",
+                &TtfbOptions::default(),
+                RepeatInput::Times(NonZeroUsize::MIN),
+            );
+            let output = JsonOutput::new(options, UNIX_EPOCH, &Err(TtfbError::NoHttpResponse));
+            let expected = concat!(
+                r#"{"schema_version":1,"ttfb_version":""#,
+                env!("CARGO_PKG_VERSION"),
+                r#"","options":{"input":"http://127.0.0.1","protocol":"auto","#,
+                r#""ip_version":"any","allow_insecure_certificates":false,"#,
+                r#""timeout_ms":10000,"repeat":{"times":1}},"#,
+                r#""started_at":"1970-01-01T00:00:00.000Z","#,
+                r#""started_at_unix_ms":0,"#,
+                r#""error":{"kind":"http","#,
+                r#""message":"Didn't receive any data. Is the host running a HTTP server?"},"#,
+                r#""measurements_num":0,"statistics_ms":{},"first_response":null}"#,
+            );
+            assert_eq!(to_string(&output).unwrap(), expected);
+        }
+    }
 }
 
 #[cfg(test)]

@@ -69,6 +69,9 @@ only change something for the binary.
   IPv4 is preferred as before.
 - Added `--headers`, which prints the status line and the headers of the
   response.
+- Added `--json`, which prints the results only as JSON in a single line, e.g.,
+  for scripts. Its dependencies grow the release binary by 41 KiB (33 KiB
+  stripped).
 - The tables show the timings in ms with one decimal. More decimals only
   showed measurement noise. Durations below 0.05 ms are shown as `<0.1`.
 - The output shows the IP address and port, the HTTP protocol, the status, and

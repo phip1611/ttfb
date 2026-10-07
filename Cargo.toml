@@ -33,7 +33,7 @@ required-features = ["bin"]
 # Feature for all additional dependencies of the binary.
 [features]
 default = ["http2", "http3"]
-bin = ["dep:clap", "dep:crossterm"]
+bin = ["dep:clap", "dep:crossterm", "dep:humantime", "dep:serde", "dep:serde_json"]
 # HTTP/2 measurements with h2 over tokio-rustls.
 http2 = ["dep:h2", "dep:tokio-rustls", "tokio/net"]
 # HTTP/3 measurements with h3 over quinn.
@@ -73,6 +73,21 @@ url = "2.5.4"
 [dependencies.crossterm]
 optional = true
 version = "0.29.0"
+
+# JSON output
+[dependencies.humantime]
+optional = true
+version = "2.2.0"
+
+[dependencies.serde]
+optional = true
+version = "1.0.229"
+features = ["derive"]
+
+[dependencies.serde_json]
+optional = true
+version = "1.0.151"
+features = ["raw_value"]
 
 # CLI args parsing
 [dependencies.clap]
