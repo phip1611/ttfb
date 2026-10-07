@@ -447,86 +447,44 @@ fn print_headers(ttfb: &TtfbOutcome) -> Result<(), String> {
     Ok(())
 }
 
+/// Prints the timings of each step of a single measurement.
 fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
     stdout()
         .execute(SetAttribute(Attribute::Bold))
         .map_err(|err| err.to_string())?;
     print_title(ttfb);
-    println!("PROPERTY        REL TIME (ms)   ABS TIME (ms)");
+    println!(
+        "{:<16}{:>13}   {:>13}",
+        "PROPERTY", "REL TIME (ms)", "ABS TIME (ms)"
+    );
     stdout()
         .execute(SetAttribute(Attribute::Reset))
         .map_err(|err| err.to_string())?;
 
-    if let Some(duration_pair) = ttfb.dns_lookup_duration() {
-        // For DNS, abs and rel time is the same (because it happens first).
-        let duration = duration_pair.relative().as_secs_f64() * 1000.0;
-        print!(
-            "{property:<14}: {rel_time:>13}   {abs_time:>13}",
-            property = DNS_LOOKUP_STEP,
-            rel_time = format_ms(duration),
-            abs_time = format_ms(duration),
+    for step in Step::all(ttfb) {
+        let label = step.label;
+        let rel_ms = step.relative.as_secs_f64() * 1000.0;
+        let abs_ms = step.absolute.as_secs_f64() * 1000.0;
+        let mut line = format!(
+            "{label:<14}: {:>13}   {:>13}",
+            format_ms(rel_ms),
+            format_ms(abs_ms)
         );
-        if duration < DNS_CACHED_MS {
-            print!("  (probably cached)");
+        if label == DNS_LOOKUP_STEP && rel_ms < DNS_CACHED_MS {
+            line.push_str("  (probably cached)");
         }
-        println!();
-    }
-    match ttfb.connection_handshake() {
-        ConnectionHandshake::Tcp { connect, tls } => {
-            println!(
-                "{property:<14}: {rel_time:>13}   {abs_time:>13}",
-                property = TCP_CONNECT_STEP,
-                rel_time = format_ms(connect.relative().as_secs_f64() * 1000.0),
-                abs_time = format_ms(connect.total().as_secs_f64() * 1000.0),
-            );
-            if let Some(tls) = tls {
-                println!(
-                    "{property:<14}: {rel_time:>13}   {abs_time:>13}",
-                    property = TLS_HANDSHAKE_STEP,
-                    rel_time = format_ms(tls.relative().as_secs_f64() * 1000.0),
-                    abs_time = format_ms(tls.total().as_secs_f64() * 1000.0),
-                );
-            }
-        }
-        ConnectionHandshake::Quic(handshake) => {
-            println!(
-                "{property:<14}: {rel_time:>13}   {abs_time:>13}",
-                property = QUIC_HANDSHAKE_STEP,
-                rel_time = format_ms(handshake.relative().as_secs_f64() * 1000.0),
-                abs_time = format_ms(handshake.total().as_secs_f64() * 1000.0),
-            );
+        if label == TTFB_STEP {
+            stdout()
+                .execute(SetAttribute(Attribute::Bold))
+                .map_err(|err| err.to_string())?;
+            println!("{line}");
+            stdout()
+                .execute(SetAttribute(Attribute::Reset))
+                .map_err(|err| err.to_string())?;
+        } else {
+            println!("{line}");
         }
     }
-    println!(
-        "{property:<14}: {rel_time:>13}   {abs_time:>13}",
-        property = HTTP_SEND_GET_STEP,
-        rel_time = format_ms(ttfb.http_get_send_duration().relative().as_secs_f64() * 1000.0),
-        abs_time = format_ms(ttfb.http_get_send_duration().total().as_secs_f64() * 1000.0),
-    );
-
-    stdout()
-        .execute(SetAttribute(Attribute::Bold))
-        .map_err(|err| err.to_string())?;
-    println!(
-        "{property:<14}: {rel_time:>13}   {abs_time:>13}",
-        property = TTFB_STEP,
-        rel_time = format_ms(ttfb.ttfb_duration().relative().as_secs_f64() * 1000.0),
-        abs_time = format_ms(ttfb.ttfb_duration().total().as_secs_f64() * 1000.0),
-    );
-    println!(
-        "{property:<14}: {rel_time:>13}   {abs_time:>13}",
-        property = HTTP_DOWNLOAD_STEP,
-        rel_time = format_ms(
-            ttfb.http_content_download_duration()
-                .relative()
-                .as_secs_f64()
-                * 1000.0
-        ),
-        abs_time = format_ms(ttfb.http_content_download_duration().total().as_secs_f64() * 1000.0),
-    );
-    stdout()
-        .execute(SetAttribute(Attribute::Reset))
-        .map_err(|err| err.to_string())?;
 
     Ok(())
 }
