@@ -32,6 +32,22 @@ impl Display for HttpProtocol {
     }
 }
 
+/// What happened to a request sent as TLS 1.3 early data (0-RTT).
+///
+/// With 0-RTT, a client that resumes an earlier TLS session sends the request
+/// together with the first handshake message, which saves a round trip.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ZeroRtt {
+    /// The request was sent after the handshake, as the server permits no
+    /// early data, e.g., as it doesn't support 0-RTT or TLS 1.3.
+    Unavailable,
+    /// The server accepted the request as early data.
+    Accepted,
+    /// The server rejected the early data, so the request was sent again
+    /// after the handshake.
+    Rejected,
+}
+
 /// Bundles the duration of a measurement step with the total duration since
 /// the beginning of the overall measurement.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -146,6 +162,9 @@ pub struct TtfbOutcome {
     protocol_selection: ProtocolSelection,
     /// The head of the final response.
     response: ResponseHead,
+    /// What happened to the request sent as TLS 1.3 early data, if 0-RTT was
+    /// requested.
+    zero_rtt: Option<ZeroRtt>,
 }
 
 // HeaderMap doesn't implement Hash. Leaving the headers out is valid, as
@@ -159,6 +178,7 @@ impl Hash for TtfbOutcome {
         self.protocol.hash(state);
         self.protocol_selection.hash(state);
         self.response.status.hash(state);
+        self.zero_rtt.hash(state);
     }
 }
 
@@ -170,6 +190,7 @@ impl TtfbOutcome {
         timings: TtfbTimings,
         protocol: HttpProtocol,
         response: ResponseHead,
+        zero_rtt: Option<ZeroRtt>,
     ) -> Self {
         Self {
             user_input,
@@ -179,6 +200,7 @@ impl TtfbOutcome {
             protocol,
             protocol_selection: ProtocolSelection::Only(protocol),
             response,
+            zero_rtt,
         }
     }
 
@@ -230,6 +252,9 @@ impl TtfbOutcome {
     }
 
     /// Returns the [`DurationPair`] for the transmission of the HTTP GET request.
+    ///
+    /// A request that the server accepted as TLS 1.3 early data was sent
+    /// during the handshake. It takes no time of its own here.
     #[must_use]
     pub fn http_get_send_duration(&self) -> DurationPair {
         let connection_end = self.connection_handshake().total();
@@ -237,6 +262,11 @@ impl TtfbOutcome {
     }
 
     /// Returns the [`DurationPair`] for the time to first byte (TTFB) of the HTTP response.
+    ///
+    /// The TTFB starts when the handshake is complete and the request is sent.
+    /// For a request sent as TLS 1.3 early data, it thus starts at the end of
+    /// the handshake. If the response arrives together with the end of the
+    /// handshake, the handshake includes the waiting time.
     #[must_use]
     pub fn ttfb_duration(&self) -> DurationPair {
         let abs_dur_so_far = self.http_get_send_duration().total();
@@ -268,6 +298,15 @@ impl TtfbOutcome {
     #[must_use]
     pub const fn headers(&self) -> &HeaderMap {
         &self.response.headers
+    }
+
+    /// Returns what happened to the request sent as TLS 1.3 early data
+    /// (0-RTT), if [`TtfbOptions::zero_rtt`] was set.
+    ///
+    /// [`TtfbOptions::zero_rtt`]: crate::TtfbOptions::zero_rtt
+    #[must_use]
+    pub const fn zero_rtt(&self) -> Option<ZeroRtt> {
+        self.zero_rtt
     }
 
     /// Returns how the protocol was selected: automatically or explicitly.
@@ -313,6 +352,7 @@ mod tests {
                 status: StatusCode::OK,
                 headers: HeaderMap::new(),
             },
+            None,
         );
         assert_eq!(
             outcome.dns_lookup_duration().unwrap().total().as_millis(),
@@ -364,6 +404,7 @@ mod tests {
                 status: StatusCode::OK,
                 headers: HeaderMap::new(),
             },
+            None,
         );
         let ConnectionHandshake::Quic(handshake) = outcome.connection_handshake() else {
             panic!("expected a QUIC connection");

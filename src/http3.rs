@@ -137,6 +137,7 @@ pub async fn measure(
             status: head.status,
             headers: head.headers,
         },
+        None,
     ))
 }
 
@@ -151,7 +152,7 @@ mod tests {
     fn requires_https() {
         let target =
             Target::resolve("http://localhost:1", IpVersion::Any, Deadline::for_tests()).unwrap();
-        let result = run_in_tokio(measure(&target, tls::config(false)));
+        let result = run_in_tokio(measure(&target, tls::config(false, false)));
         assert!(matches!(result, Err(TtfbError::UnsupportedHttpProtocol(_))));
     }
 }

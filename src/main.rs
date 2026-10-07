@@ -205,6 +205,7 @@ fn main() {
         allow_insecure_certificates: input.allow_insecure_certificates,
         timeout: Duration::from_secs(input.timeout),
         ip_version,
+        zero_rtt: false,
     };
     if input.json {
         // Without --repeat, a single run is one measurement.

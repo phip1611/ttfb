@@ -60,6 +60,11 @@ only change something for the binary.
 - `TtfbOutcome::status()` and `TtfbOutcome::headers()` return the status code
   and the headers of the final response. The types `StatusCode` and
   `HeaderMap` of the `http` crate are re-exported.
+- `TtfbOptions::zero_rtt` sends the request as TLS 1.3 early data (0-RTT),
+  after a warm-up request that obtains the session ticket.
+  `TtfbOutcome::zero_rtt()` reports as `ZeroRtt` whether the server accepted
+  the early data. Only HTTP/1.1 supports it, so `ProtocolSelection::Auto`
+  measures HTTP/1.1 with 0-RTT.
 
 ## ttfb binary
 

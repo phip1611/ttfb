@@ -10,7 +10,8 @@
 //! HTTP/1.1 is always available. HTTP/2 and HTTP/3 come with the `http2` and
 //! `http3` features, which are enabled by default. Unless told otherwise, the
 //! client picks the best protocol the server supports. TLS 1.2 and 1.3 are
-//! supported.
+//! supported. With [`TtfbOptions::zero_rtt`], the request is sent as TLS 1.3
+//! early data (0-RTT).
 //!
 //! See [`TtfbClient`], which is the entry point of the public interface:
 //!
@@ -47,7 +48,7 @@
 pub use client::{IpVersion, ProtocolSelection, TtfbClient, TtfbOptions};
 pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
 pub use http::{HeaderMap, StatusCode};
-pub use outcome::{ConnectionHandshake, DurationPair, HttpProtocol, TtfbOutcome};
+pub use outcome::{ConnectionHandshake, DurationPair, HttpProtocol, TtfbOutcome, ZeroRtt};
 
 use std::{panic, thread};
 use tokio::runtime::Builder;
