@@ -49,7 +49,6 @@ struct StepName {
     /// The label in the table, e.g., "TCP Connect".
     label: &'static str,
     /// The key in the JSON output, e.g., "tcp_connect".
-    #[allow(dead_code, reason = "the JSON output of a following commit uses it")]
     key: &'static str,
 }
 
@@ -544,11 +543,83 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
 /// Its only export is [`JsonOutput`], which [`JsonOutput::new`] creates from
 /// the measurements, and which serializes to the JSON format.
 mod json {
-    use serde::Serialize;
+    use super::{calc_statistics_from_durations, step_durations};
+    use serde::{Serialize, Serializer};
+    use serde_json::value::RawValue;
+    use std::time::Duration;
     use ttfb::TtfbOutcome;
 
     /// The version of the JSON output. It increases with incompatible changes.
     const JSON_SCHEMA_VERSION: u32 = 1;
+
+    /// Serializes `ms` with the precision of the text output. Otherwise, JSON
+    /// would show floating-point noise such as `0.011871999999999999`.
+    fn serialize_ms<S: Serializer>(ms: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+        RawValue::from_string(format!("{ms:.3}"))
+            .expect("should be a valid JSON number, as durations are finite")
+            .serialize(serializer)
+    }
+
+    /// The statistics of a step in the JSON output, in ms.
+    #[derive(Debug, Serialize)]
+    struct JsonStatistics {
+        #[serde(serialize_with = "serialize_ms")]
+        min: f64,
+        #[serde(serialize_with = "serialize_ms")]
+        median: f64,
+        #[serde(serialize_with = "serialize_ms")]
+        mean: f64,
+        #[serde(serialize_with = "serialize_ms")]
+        max: f64,
+    }
+
+    impl JsonStatistics {
+        /// Returns the statistics of `durations`.
+        fn of(durations: &[Duration]) -> Self {
+            let [min, median, mean, max] = calc_statistics_from_durations(durations);
+            Self {
+                min,
+                median,
+                mean,
+                max,
+            }
+        }
+    }
+
+    /// The statistics of the durations of a step.
+    #[derive(Debug, Serialize)]
+    struct JsonDurationStatistics {
+        /// The statistics of the duration of the step itself.
+        relative: JsonStatistics,
+    }
+
+    /// The statistics of each step by its key, in the order of the steps.
+    #[derive(Debug)]
+    struct JsonStepStatistics(Vec<(&'static str, JsonDurationStatistics)>);
+
+    // A derive would emit a list of pairs and a map type would sort the
+    // keys, but the JSON object should keep the order of the steps.
+    impl Serialize for JsonStepStatistics {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            serializer.collect_map(self.0.iter().map(|(key, statistics)| (key, statistics)))
+        }
+    }
+
+    impl JsonStepStatistics {
+        /// Returns the statistics of each step over all `outcomes`.
+        fn from_outcomes(outcomes: &[TtfbOutcome]) -> Self {
+            let statistics = step_durations(outcomes, |step| step.relative)
+                .into_iter()
+                .map(|(step, relative)| {
+                    let statistics = JsonDurationStatistics {
+                        relative: JsonStatistics::of(&relative),
+                    };
+                    (step.name.key, statistics)
+                })
+                .collect();
+            Self(statistics)
+        }
+    }
 
     /// The JSON output of one or more measurements of the same target.
     #[derive(Debug, Serialize)]
@@ -556,15 +627,61 @@ mod json {
         schema_version: u32,
         /// The number of measurements.
         measurements_num: usize,
+        /// The statistics of each step over all measurements. Steps that
+        /// didn't happen are missing.
+        statistics_ms: JsonStepStatistics,
     }
 
     impl JsonOutput {
         /// Creates the output of `outcomes`.
-        pub(super) const fn new(outcomes: &[TtfbOutcome]) -> Self {
+        pub(super) fn new(outcomes: &[TtfbOutcome]) -> Self {
             Self {
                 schema_version: JSON_SCHEMA_VERSION,
                 measurements_num: outcomes.len(),
+                statistics_ms: JsonStepStatistics::from_outcomes(outcomes),
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use serde_json::to_string_pretty;
+
+        #[test]
+        fn json_step_statistics_keep_the_order_of_the_steps() {
+            let statistics = |ms| JsonStatistics {
+                min: ms,
+                median: ms,
+                mean: ms,
+                max: ms,
+            };
+            let step = |relative| JsonDurationStatistics {
+                relative: statistics(relative),
+            };
+            let steps = JsonStepStatistics(vec![
+                ("ttfb", step(2.0)),
+                ("http_content_download", step(7.0)),
+            ]);
+            let expected = r#"{
+  "ttfb": {
+    "relative": {
+      "min": 2.000,
+      "median": 2.000,
+      "mean": 2.000,
+      "max": 2.000
+    }
+  },
+  "http_content_download": {
+    "relative": {
+      "min": 7.000,
+      "median": 7.000,
+      "mean": 7.000,
+      "max": 7.000
+    }
+  }
+}"#;
+            assert_eq!(to_string_pretty(&steps).unwrap(), expected);
         }
     }
 }
