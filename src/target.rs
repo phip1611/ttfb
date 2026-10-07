@@ -111,11 +111,11 @@ fn resolve_dns(
     };
     let resolver = builder.build();
 
-    let begin = Instant::now();
-
-    // hickory_resolver requires Tokio.
-    let response = run_in_tokio(deadline.run(async {
-        resolver
+    // hickory_resolver requires Tokio. Starting the runtime and its thread
+    // doesn't count as part of the lookup.
+    let (response, duration) = run_in_tokio(deadline.run(async {
+        let begin = Instant::now();
+        let response = resolver
             .lookup_ip(url.host_str().unwrap())
             .await
             .map(|res| res.iter().collect::<Vec<IpAddr>>())
@@ -125,10 +125,9 @@ fn resolve_dns(
                 } else {
                     TtfbError::CantResolveDns(ResolveDnsError::Other(err.to_string()))
                 }
-            })
+            })?;
+        Ok((response, begin.elapsed()))
     }))?;
-
-    let duration = begin.elapsed();
 
     let ipv4_addr = response.iter().find(|addr| addr.is_ipv4());
     let ipv6_addr = response.iter().find(|addr| addr.is_ipv6());
