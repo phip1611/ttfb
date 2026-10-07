@@ -30,6 +30,9 @@ only change something for the binary.
   certificates together. Previously, the bundled ones were only used if the
   system's could not be loaded.
 - HTTPS works with IPv6 addresses, such as `https://[2606:4700:4700::1111]`.
+- `TtfbError` compares `CantConnectHttp` and `OtherStreamError` correctly.
+  Before, two errors of the same variant were never equal, while the two
+  variants were equal with the same `io::ErrorKind`.
 - Added `TtfbOutcome::protocol()`, which reports the HTTP protocol used as
   `HttpProtocol`.
 - Added HTTP/2 measurements over TLS with `HttpProtocol::Http2`. They need
