@@ -75,9 +75,6 @@ pub struct TtfbOptions {
     /// The measured connection resumes the warm-up's TLS session, so its
     /// handshake is shorter than a full one. [`TtfbOutcome::zero_rtt`]
     /// reports whether the server accepted the early data.
-    ///
-    /// HTTP/3 doesn't support 0-RTT. With [`ProtocolSelection::Auto`], the
-    /// client therefore measures HTTP/2 or HTTP/1.1.
     pub zero_rtt: bool,
 }
 
@@ -142,23 +139,17 @@ impl TtfbClient {
         measure(self.options.zero_rtt)
     }
 
-    /// Fails with 0-RTT, which HTTP/3 doesn't support. For the automatic
-    /// selection, this falls back to HTTP/2 or HTTP/1.1.
-    #[cfg(feature = "http3")]
-    fn check_zero_rtt_unsupported(&self, protocol: HttpProtocol) -> Result<(), TtfbError> {
-        if self.options.zero_rtt {
-            return Err(TtfbError::UnsupportedHttpProtocol(format!(
-                "0-RTT isn't supported with {protocol}"
-            )));
-        }
-        Ok(())
-    }
-
-    /// Measures `target` via HTTP/2, after a warm-up request with 0-RTT. The
-    /// asynchronous exchanges run on a dedicated Tokio runtime.
-    #[cfg(feature = "http2")]
-    fn measure_http2(&self, target: &Target, deadline: Deadline) -> Result<TtfbOutcome, TtfbError> {
-        let measure = |early_data| http2::measure(target, Arc::clone(&self.tls_config), early_data);
+    /// Runs the asynchronous `measure` on a dedicated Tokio runtime, after a
+    /// warm-up request with 0-RTT. `measure` takes whether to send early data.
+    #[cfg(any(feature = "http2", feature = "http3"))]
+    fn measure_async<F>(
+        &self,
+        deadline: Deadline,
+        measure: impl Fn(bool) -> F + Sync,
+    ) -> Result<TtfbOutcome, TtfbError>
+    where
+        F: Future<Output = Result<TtfbOutcome, TtfbError>> + Send,
+    {
         run_in_tokio(deadline.run(async {
             if self.options.zero_rtt {
                 // The warm-up obtains the session ticket for the early data.
@@ -166,6 +157,14 @@ impl TtfbClient {
             }
             measure(self.options.zero_rtt).await
         }))
+    }
+
+    /// Measures `target` via HTTP/2, after a warm-up request with 0-RTT.
+    #[cfg(feature = "http2")]
+    fn measure_http2(&self, target: &Target, deadline: Deadline) -> Result<TtfbOutcome, TtfbError> {
+        self.measure_async(deadline, |early_data| {
+            http2::measure(target, Arc::clone(&self.tls_config), early_data)
+        })
     }
 
     /// Fails, as the crate was built without the `http2` feature.
@@ -180,12 +179,12 @@ impl TtfbClient {
         ))
     }
 
-    /// Measures `target` via HTTP/3. The asynchronous exchange runs on a
-    /// dedicated Tokio runtime.
+    /// Measures `target` via HTTP/3, after a warm-up request with 0-RTT.
     #[cfg(feature = "http3")]
     fn measure_http3(&self, target: &Target, deadline: Deadline) -> Result<TtfbOutcome, TtfbError> {
-        self.check_zero_rtt_unsupported(HttpProtocol::Http3)?;
-        run_in_tokio(deadline.run(http3::measure(target, Arc::clone(&self.tls_config))))
+        self.measure_async(deadline, |early_data| {
+            http3::measure(target, Arc::clone(&self.tls_config), early_data)
+        })
     }
 
     /// Fails, as the crate was built without the `http3` feature.
@@ -536,6 +535,8 @@ mod network_tests {
             ProtocolSelection::Only(HttpProtocol::Http11),
             #[cfg(feature = "http2")]
             ProtocolSelection::Only(HttpProtocol::Http2),
+            #[cfg(feature = "http3")]
+            ProtocolSelection::Only(HttpProtocol::Http3),
         ] {
             let client = TtfbClient::new(TtfbOptions {
                 protocol,

@@ -2,7 +2,7 @@
 
 //! HTTP/2 measurements over TLS.
 
-use crate::outcome::{Connect, ResponseHead, TtfbTimings};
+use crate::outcome::{Connect, ResponseHead, TtfbTimings, send_and_ttfb_durations};
 use crate::target::Target;
 use crate::{HttpProtocol, TtfbError, TtfbOutcome, ZeroRtt, build_http_request, tls};
 use h2::client::Builder;
@@ -230,12 +230,9 @@ pub async fn measure(
         (true, true) => ZeroRtt::Accepted,
         (true, false) => ZeroRtt::Rejected,
     });
-    // Without early data, the handshake ends before sending. With early data,
-    // sending ends before the handshake; it takes no time of its own then, and
-    // the TTFB starts at the end of the handshake.
     let tls_duration = handshake_end.instant.duration_since(tls_begin);
-    let send_duration = send_end.saturating_duration_since(send_begin.max(handshake_end.instant));
-    let ttfb_duration = first_byte.saturating_duration_since(send_end.max(handshake_end.instant));
+    let (send_duration, ttfb_duration) =
+        send_and_ttfb_durations(handshake_end.instant, send_begin, send_end, first_byte);
 
     let (head, body) = response.into_parts();
 

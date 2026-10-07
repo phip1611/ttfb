@@ -63,8 +63,7 @@ only change something for the binary.
 - `TtfbOptions::zero_rtt` sends the request as TLS 1.3 early data (0-RTT),
   after a warm-up request that obtains the session ticket.
   `TtfbOutcome::zero_rtt()` reports as `ZeroRtt` whether the server accepted
-  the early data. HTTP/3 doesn't support it, so `ProtocolSelection::Auto`
-  measures HTTP/2 or HTTP/1.1 with 0-RTT.
+  the early data.
 
 ## ttfb binary
 
