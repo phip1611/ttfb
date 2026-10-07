@@ -7,8 +7,6 @@ use crate::deadline::Deadline;
 use crate::http2;
 #[cfg(feature = "http3")]
 use crate::http3;
-#[cfg(any(feature = "http2", feature = "http3"))]
-use crate::run_in_tokio;
 use crate::target::Target;
 use crate::{HttpProtocol, TtfbError, TtfbOutcome, http11, tls};
 use rustls::ClientConfig;
@@ -113,47 +111,33 @@ impl TtfbClient {
     }
 
     /// Measures `target` via HTTP/1.1.
-    fn measure_http11(
-        &self,
-        target: &Target,
-        deadline: Deadline,
-    ) -> Result<TtfbOutcome, TtfbError> {
-        async_io::block_on(deadline.run(http11::measure(target, Arc::clone(&self.tls_config))))
+    async fn measure_http11(&self, target: &Target) -> Result<TtfbOutcome, TtfbError> {
+        http11::measure(target, Arc::clone(&self.tls_config)).await
     }
 
-    /// Measures `target` via HTTP/2. The asynchronous exchange runs on a
-    /// dedicated Tokio runtime.
+    /// Measures `target` via HTTP/2.
     #[cfg(feature = "http2")]
-    fn measure_http2(&self, target: &Target, deadline: Deadline) -> Result<TtfbOutcome, TtfbError> {
-        run_in_tokio(deadline.run(http2::measure(target, Arc::clone(&self.tls_config))))
+    async fn measure_http2(&self, target: &Target) -> Result<TtfbOutcome, TtfbError> {
+        http2::measure(target, Arc::clone(&self.tls_config)).await
     }
 
     /// Fails, as the crate was built without the `http2` feature.
     #[cfg(not(feature = "http2"))]
-    fn measure_http2(
-        &self,
-        _target: &Target,
-        _deadline: Deadline,
-    ) -> Result<TtfbOutcome, TtfbError> {
+    async fn measure_http2(&self, _target: &Target) -> Result<TtfbOutcome, TtfbError> {
         Err(TtfbError::UnsupportedHttpProtocol(
             "ttfb was built without the http2 feature".into(),
         ))
     }
 
-    /// Measures `target` via HTTP/3. The asynchronous exchange runs on a
-    /// dedicated Tokio runtime.
+    /// Measures `target` via HTTP/3.
     #[cfg(feature = "http3")]
-    fn measure_http3(&self, target: &Target, deadline: Deadline) -> Result<TtfbOutcome, TtfbError> {
-        run_in_tokio(deadline.run(http3::measure(target, Arc::clone(&self.tls_config))))
+    async fn measure_http3(&self, target: &Target) -> Result<TtfbOutcome, TtfbError> {
+        http3::measure(target, Arc::clone(&self.tls_config)).await
     }
 
     /// Fails, as the crate was built without the `http3` feature.
     #[cfg(not(feature = "http3"))]
-    fn measure_http3(
-        &self,
-        _target: &Target,
-        _deadline: Deadline,
-    ) -> Result<TtfbOutcome, TtfbError> {
+    async fn measure_http3(&self, _target: &Target) -> Result<TtfbOutcome, TtfbError> {
         Err(TtfbError::UnsupportedHttpProtocol(
             "ttfb was built without the http3 feature".into(),
         ))
@@ -161,19 +145,19 @@ impl TtfbClient {
 
     /// Measures `target` with the best protocol that is available: HTTP/3, then
     /// HTTP/2, then HTTP/1.1. Plain HTTP only supports HTTP/1.1.
-    fn measure_auto(&self, target: &Target, deadline: Deadline) -> Result<TtfbOutcome, TtfbError> {
+    async fn measure_auto(&self, target: &Target) -> Result<TtfbOutcome, TtfbError> {
         if target.url.scheme() != "https" {
-            return self.measure_http11(target, deadline);
+            return self.measure_http11(target).await;
         }
-        self.measure_http3(target, deadline)
-            .or_else(|error| match error {
-                TtfbError::UnsupportedHttpProtocol(_) => self.measure_http2(target, deadline),
-                error => Err(error),
-            })
-            .or_else(|error| match error {
-                TtfbError::UnsupportedHttpProtocol(_) => self.measure_http11(target, deadline),
-                error => Err(error),
-            })
+        match self.measure_http3(target).await {
+            Err(TtfbError::UnsupportedHttpProtocol(_)) => {}
+            result => return result,
+        }
+        match self.measure_http2(target).await {
+            Err(TtfbError::UnsupportedHttpProtocol(_)) => {}
+            result => return result,
+        }
+        self.measure_http11(target).await
     }
 
     /// Checks that the options are valid.
@@ -198,19 +182,31 @@ impl TtfbClient {
     /// - `12.34.56.78/foobar` (defaults to `http://`)
     /// - `12.34.56.78` (defaults to `http://`)
     pub fn measure(&self, input: impl AsRef<str>) -> Result<TtfbOutcome, TtfbError> {
+        // async-io's block_on also drives the reactor on this thread.
+        async_io::block_on(self.measure_async(input))
+    }
+
+    /// Measures one GET request to `input` asynchronously.
+    async fn measure_async(&self, input: impl AsRef<str>) -> Result<TtfbOutcome, TtfbError> {
         self.validate()?;
         let deadline = Deadline::after(self.options.timeout);
-        let target = async_io::block_on(Target::resolve(
-            input.as_ref(),
-            self.options.ip_version,
-            deadline,
-        ))?;
-        let outcome = match self.options.protocol {
-            ProtocolSelection::Auto => self.measure_auto(&target, deadline),
-            ProtocolSelection::Only(HttpProtocol::Http11) => self.measure_http11(&target, deadline),
-            ProtocolSelection::Only(HttpProtocol::Http2) => self.measure_http2(&target, deadline),
-            ProtocolSelection::Only(HttpProtocol::Http3) => self.measure_http3(&target, deadline),
-        }?;
+        let target = Target::resolve(input.as_ref(), self.options.ip_version, deadline).await?;
+        let outcome = deadline
+            .run(async {
+                match self.options.protocol {
+                    ProtocolSelection::Auto => self.measure_auto(&target).await,
+                    ProtocolSelection::Only(HttpProtocol::Http11) => {
+                        self.measure_http11(&target).await
+                    }
+                    ProtocolSelection::Only(HttpProtocol::Http2) => {
+                        self.measure_http2(&target).await
+                    }
+                    ProtocolSelection::Only(HttpProtocol::Http3) => {
+                        self.measure_http3(&target).await
+                    }
+                }
+            })
+            .await?;
         Ok(outcome.with_protocol_selection(self.options.protocol))
     }
 }

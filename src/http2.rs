@@ -166,7 +166,6 @@ mod tests {
     use super::*;
     use crate::IpVersion;
     use crate::deadline::Deadline;
-    use crate::run_in_tokio;
 
     #[test]
     fn requires_https() {
@@ -176,7 +175,7 @@ mod tests {
             Deadline::for_tests(),
         ))
         .unwrap();
-        let result = run_in_tokio(measure(&target, tls::config(false)));
+        let result = async_io::block_on(measure(&target, tls::config(false)));
         assert!(matches!(result, Err(TtfbError::UnsupportedHttpProtocol(_))));
     }
 }

@@ -114,6 +114,7 @@ features = [
   "wrap_help",
 ]
 
+# The runtime of hickory-resolver on the thread of the DNS lookup
 [dependencies.tokio]
 version = "1.50.0"
 default-features = false
