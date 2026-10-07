@@ -211,9 +211,11 @@ fn main() {
         let repeat = input
             .repeat
             .unwrap_or(RepeatInput::Times(NonZeroUsize::MIN));
-        let res = measure_repeatedly(options, &input.host, repeat);
-        let outcomes = unwrap_or_exit!(res);
-        print_json(&outcomes);
+        let result = measure_repeatedly(options, &input.host, repeat);
+        print_json(&result);
+        if result.is_err() {
+            exit(-1);
+        }
     } else if let Some(repeat) = input.repeat {
         let res = measure_repeatedly(options, &input.host, repeat);
         let outcomes = unwrap_or_exit!(res);
@@ -472,9 +474,9 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
     Ok(())
 }
 
-/// Prints the JSON output of `outcomes`.
-fn print_json(outcomes: &[TtfbOutcome]) {
-    let output = json::JsonOutput::new(outcomes);
+/// Prints the JSON output of the measurements.
+fn print_json(result: &Result<Vec<TtfbOutcome>, TtfbError>) {
+    let output = json::JsonOutput::new(result);
     let json = to_string(&output).expect("should serialize, as all map keys are strings");
     println!("{json}");
 }
@@ -541,13 +543,13 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
 /// The JSON output of the measurements.
 ///
 /// Its only export is [`JsonOutput`], which [`JsonOutput::new`] creates from
-/// the measurements, and which serializes to the JSON format.
+/// the measurements or their error, and which serializes to the JSON format.
 mod json {
     use super::{calc_statistics_from_durations, step_durations};
     use serde::{Serialize, Serializer};
     use serde_json::value::RawValue;
     use std::time::Duration;
-    use ttfb::TtfbOutcome;
+    use ttfb::{TtfbError, TtfbOutcome};
 
     /// The version of the JSON output. It increases with incompatible changes.
     const JSON_SCHEMA_VERSION: u32 = 1;
@@ -608,6 +610,9 @@ mod json {
     impl JsonStepStatistics {
         /// Returns the statistics of each step over all `outcomes`.
         fn from_outcomes(outcomes: &[TtfbOutcome]) -> Self {
+            if outcomes.is_empty() {
+                return Self(Vec::new());
+            }
             let relative = step_durations(outcomes, |step| step.relative);
             let absolute = step_durations(outcomes, |step| step.absolute);
             let statistics = relative
@@ -625,10 +630,48 @@ mod json {
         }
     }
 
+    /// The error of a failed measurement in the JSON output.
+    #[derive(Debug, Serialize)]
+    struct JsonError {
+        /// The kind of the error, which scripts can rely on, e.g., "timeout".
+        kind: &'static str,
+        /// The error message for humans.
+        message: String,
+    }
+
+    impl JsonError {
+        /// Returns the JSON error of `error`.
+        fn from_error(error: &TtfbError) -> Self {
+            let kind = match error {
+                TtfbError::InvalidUrl(_) => "invalid_url",
+                TtfbError::InvalidTimeout(_) => "invalid_timeout",
+                TtfbError::CantResolveDns(_) | TtfbError::CantConfigureDNSError(_) => "dns",
+                TtfbError::NoAddressForIpVersion(_) => "no_address_for_ip_version",
+                TtfbError::CantConnectTcp(_) => "tcp_connect",
+                TtfbError::Tls(_) => "tls",
+                TtfbError::CantConnectHttp(_)
+                | TtfbError::NoHttpResponse
+                | TtfbError::InvalidHttpResponse(_)
+                | TtfbError::Http2(_)
+                | TtfbError::Http3(_) => "http",
+                TtfbError::OtherStreamError(_) => "io",
+                TtfbError::UnsupportedHttpProtocol(_) => "unsupported_protocol",
+                TtfbError::Timeout(_) => "timeout",
+                _ => "other",
+            };
+            Self {
+                kind,
+                message: error.to_string(),
+            }
+        }
+    }
+
     /// The JSON output of one or more measurements of the same target.
     #[derive(Debug, Serialize)]
     pub(super) struct JsonOutput {
         schema_version: u32,
+        /// The error, if a measurement failed. Then, there are no statistics.
+        error: Option<JsonError>,
         /// The number of measurements.
         measurements_num: usize,
         /// The statistics of each step over all measurements. Steps that
@@ -637,10 +680,16 @@ mod json {
     }
 
     impl JsonOutput {
-        /// Creates the output of `outcomes`.
-        pub(super) fn new(outcomes: &[TtfbOutcome]) -> Self {
+        /// Creates the output of the measurements: either all of them or the
+        /// error of the one that failed.
+        pub(super) fn new(result: &Result<Vec<TtfbOutcome>, TtfbError>) -> Self {
+            let (outcomes, error) = match result {
+                Ok(outcomes) => (outcomes.as_slice(), None),
+                Err(error) => (&[][..], Some(JsonError::from_error(error))),
+            };
             Self {
                 schema_version: JSON_SCHEMA_VERSION,
+                error,
                 measurements_num: outcomes.len(),
                 statistics_ms: JsonStepStatistics::from_outcomes(outcomes),
             }
@@ -650,7 +699,7 @@ mod json {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use serde_json::to_string_pretty;
+        use serde_json::{to_string, to_string_pretty};
 
         #[test]
         fn json_step_statistics_keep_the_order_of_the_steps() {
@@ -699,6 +748,18 @@ mod json {
   }
 }"#;
             assert_eq!(to_string_pretty(&steps).unwrap(), expected);
+        }
+
+        #[test]
+        fn json_output_of_an_error() {
+            let output = JsonOutput::new(&Err(TtfbError::NoHttpResponse));
+            let expected = concat!(
+                r#"{"schema_version":1,"#,
+                r#""error":{"kind":"http","#,
+                r#""message":"Didn't receive any data. Is the host running a HTTP server?"},"#,
+                r#""measurements_num":0,"statistics_ms":{}}"#,
+            );
+            assert_eq!(to_string(&output).unwrap(), expected);
         }
     }
 }

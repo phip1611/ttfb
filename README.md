@@ -56,7 +56,7 @@ response, which often explain the timings, e.g., `cache-status` or
 `server-timing`. With `--repeat`, it prints those of the first measurement.
 
 With `--json`, the CLI prints the results only as JSON in a single line, e.g.,
-for scripts.
+for scripts. An error is part of the JSON, and the exit code still reports it.
 What is usually meant by TTFB, the time from the start of the measurement to
 the first byte of the response, is `statistics_ms.ttfb.absolute.median`. \
 Example: `$ ttfb --json https://phip1611.de | jq .statistics_ms.ttfb.absolute.median`
