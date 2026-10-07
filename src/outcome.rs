@@ -8,6 +8,8 @@ use std::fmt::{self, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use std::time::Duration;
+#[cfg(any(feature = "http2", feature = "http3"))]
+use std::time::Instant;
 
 /// The HTTP protocol used for the measurement.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -30,6 +32,22 @@ impl Display for HttpProtocol {
         };
         f.write_str(name)
     }
+}
+
+/// What happened to a request sent as TLS 1.3 early data (0-RTT).
+///
+/// With 0-RTT, a client that resumes an earlier TLS session sends the request
+/// together with the first handshake message, which saves a round trip.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ZeroRtt {
+    /// The request was sent after the handshake, as the server permits no
+    /// early data, e.g., as it doesn't support 0-RTT or TLS 1.3.
+    Unavailable,
+    /// The server accepted the request as early data.
+    Accepted,
+    /// The server rejected the early data, so the request was sent again
+    /// after the handshake.
+    Rejected,
 }
 
 /// Bundles the duration of a measurement step with the total duration since
@@ -122,6 +140,23 @@ pub(crate) struct TtfbTimings {
     pub http_content_download: Duration,
 }
 
+/// Returns the relative durations of sending the request and of the TTFB.
+///
+/// Without early data, sending begins after `handshake_end`. A request sent as
+/// TLS 1.3 early data goes out before; sending then takes no time of its own,
+/// and the TTFB starts at the end of the handshake.
+#[cfg(any(feature = "http2", feature = "http3"))]
+pub(crate) fn send_and_ttfb_durations(
+    handshake_end: Instant,
+    send_begin: Instant,
+    send_end: Instant,
+    first_byte: Instant,
+) -> (Duration, Duration) {
+    let send = send_end.saturating_duration_since(send_begin.max(handshake_end));
+    let ttfb = first_byte.saturating_duration_since(send_end.max(handshake_end));
+    (send, ttfb)
+}
+
 /// The status code and the headers of the final response.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ResponseHead {
@@ -146,6 +181,9 @@ pub struct TtfbOutcome {
     protocol_selection: ProtocolSelection,
     /// The head of the final response.
     response: ResponseHead,
+    /// What happened to the request sent as TLS 1.3 early data, if 0-RTT was
+    /// requested.
+    zero_rtt: Option<ZeroRtt>,
 }
 
 // HeaderMap doesn't implement Hash. Leaving the headers out is valid, as
@@ -159,6 +197,7 @@ impl Hash for TtfbOutcome {
         self.protocol.hash(state);
         self.protocol_selection.hash(state);
         self.response.status.hash(state);
+        self.zero_rtt.hash(state);
     }
 }
 
@@ -170,6 +209,7 @@ impl TtfbOutcome {
         timings: TtfbTimings,
         protocol: HttpProtocol,
         response: ResponseHead,
+        zero_rtt: Option<ZeroRtt>,
     ) -> Self {
         Self {
             user_input,
@@ -179,6 +219,7 @@ impl TtfbOutcome {
             protocol,
             protocol_selection: ProtocolSelection::Only(protocol),
             response,
+            zero_rtt,
         }
     }
 
@@ -230,6 +271,9 @@ impl TtfbOutcome {
     }
 
     /// Returns the [`DurationPair`] for the transmission of the HTTP GET request.
+    ///
+    /// A request that the server accepted as TLS 1.3 early data was sent
+    /// during the handshake. It takes no time of its own here.
     #[must_use]
     pub fn http_get_send_duration(&self) -> DurationPair {
         let connection_end = self.connection_handshake().total();
@@ -237,6 +281,11 @@ impl TtfbOutcome {
     }
 
     /// Returns the [`DurationPair`] for the time to first byte (TTFB) of the HTTP response.
+    ///
+    /// The TTFB starts when the handshake is complete and the request is sent.
+    /// For a request sent as TLS 1.3 early data, it thus starts at the end of
+    /// the handshake. If the response arrives together with the end of the
+    /// handshake, the handshake includes the waiting time.
     #[must_use]
     pub fn ttfb_duration(&self) -> DurationPair {
         let abs_dur_so_far = self.http_get_send_duration().total();
@@ -270,6 +319,15 @@ impl TtfbOutcome {
         &self.response.headers
     }
 
+    /// Returns what happened to the request sent as TLS 1.3 early data
+    /// (0-RTT), if [`TtfbOptions::zero_rtt`] was set.
+    ///
+    /// [`TtfbOptions::zero_rtt`]: crate::TtfbOptions::zero_rtt
+    #[must_use]
+    pub const fn zero_rtt(&self) -> Option<ZeroRtt> {
+        self.zero_rtt
+    }
+
     /// Returns how the protocol was selected: automatically or explicitly.
     #[must_use]
     pub const fn protocol_selection(&self) -> ProtocolSelection {
@@ -285,12 +343,16 @@ impl TtfbOutcome {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(any(feature = "http2", feature = "http3"))]
+    use crate::outcome::send_and_ttfb_durations;
     use crate::outcome::{
         Connect, ConnectionHandshake, HttpProtocol, ResponseHead, TtfbOutcome, TtfbTimings,
     };
     use http::{HeaderMap, StatusCode};
     use std::net::{IpAddr, Ipv4Addr};
     use std::time::Duration;
+    #[cfg(any(feature = "http2", feature = "http3"))]
+    use std::time::Instant;
 
     #[test]
     fn outcome_durations_are_sane() {
@@ -313,6 +375,7 @@ mod tests {
                 status: StatusCode::OK,
                 headers: HeaderMap::new(),
             },
+            None,
         );
         assert_eq!(
             outcome.dns_lookup_duration().unwrap().total().as_millis(),
@@ -364,6 +427,7 @@ mod tests {
                 status: StatusCode::OK,
                 headers: HeaderMap::new(),
             },
+            None,
         );
         let ConnectionHandshake::Quic(handshake) = outcome.connection_handshake() else {
             panic!("expected a QUIC connection");
@@ -373,6 +437,24 @@ mod tests {
             outcome.http_get_send_duration().total().as_millis(),
             1 + 2 + 4,
             "DNS + QUIC handshake + HTTP GET send"
+        );
+    }
+
+    #[cfg(any(feature = "http2", feature = "http3"))]
+    #[test]
+    fn early_data_takes_no_send_time() {
+        let begin = Instant::now();
+        let at = |millis| begin + Duration::from_millis(millis);
+        let millis = Duration::from_millis;
+        assert_eq!(
+            send_and_ttfb_durations(at(1), at(2), at(3), at(5)),
+            (millis(1), millis(2)),
+            "without early data, sending follows the handshake"
+        );
+        assert_eq!(
+            send_and_ttfb_durations(at(3), at(1), at(2), at(5)),
+            (Duration::ZERO, millis(2)),
+            "with early data, the TTFB starts at the end of the handshake"
         );
     }
 }

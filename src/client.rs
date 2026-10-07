@@ -69,6 +69,13 @@ pub struct TtfbOptions {
     /// [`IpVersion::V6`], measurements of a host without an address of that
     /// version fail with [`TtfbError::NoAddressForIpVersion`].
     pub ip_version: IpVersion,
+    /// Whether to send the request as TLS 1.3 early data (0-RTT), which
+    /// requires an HTTPS URL. Early data needs a session ticket from an
+    /// earlier connection, so a warm-up request precedes each measurement.
+    /// The measured connection resumes the warm-up's TLS session, so its
+    /// handshake is shorter than a full one. [`TtfbOutcome::zero_rtt`]
+    /// reports whether the server accepted the early data.
+    pub zero_rtt: bool,
 }
 
 impl TtfbOptions {
@@ -87,6 +94,7 @@ impl Default for TtfbOptions {
             allow_insecure_certificates: false,
             timeout: Self::DEFAULT_TIMEOUT,
             ip_version: IpVersion::default(),
+            zero_rtt: false,
         }
     }
 }
@@ -107,28 +115,56 @@ impl TtfbClient {
     #[must_use]
     pub fn new(options: TtfbOptions) -> Self {
         Self {
-            tls_config: tls::config(options.allow_insecure_certificates),
+            tls_config: tls::config(options.allow_insecure_certificates, options.zero_rtt),
             options,
         }
     }
 
-    /// Measures `target` via HTTP/1.1.
+    /// Measures `target` via HTTP/1.1, after a warm-up request with 0-RTT.
     fn measure_http11(
         &self,
         target: &Target,
         deadline: Deadline,
     ) -> Result<TtfbOutcome, TtfbError> {
-        // The errors of the blocking I/O don't tell whether the deadline
-        // caused them.
-        http11::measure(target, Arc::clone(&self.tls_config), deadline)
-            .map_err(|error| deadline.explain(error))
+        let measure = |early_data| {
+            // The errors of the blocking I/O don't tell whether the deadline
+            // caused them.
+            http11::measure(target, Arc::clone(&self.tls_config), deadline, early_data)
+                .map_err(|error| deadline.explain(error))
+        };
+        if self.options.zero_rtt {
+            // The warm-up obtains the session ticket for the early data.
+            measure(false)?;
+        }
+        measure(self.options.zero_rtt)
     }
 
-    /// Measures `target` via HTTP/2. The asynchronous exchange runs on a
-    /// dedicated Tokio runtime.
+    /// Runs the asynchronous `measure` on a dedicated Tokio runtime, after a
+    /// warm-up request with 0-RTT. `measure` takes whether to send early data.
+    #[cfg(any(feature = "http2", feature = "http3"))]
+    fn measure_async<F>(
+        &self,
+        deadline: Deadline,
+        measure: impl Fn(bool) -> F + Sync,
+    ) -> Result<TtfbOutcome, TtfbError>
+    where
+        F: Future<Output = Result<TtfbOutcome, TtfbError>> + Send,
+    {
+        run_in_tokio(deadline.run(async {
+            if self.options.zero_rtt {
+                // The warm-up obtains the session ticket for the early data.
+                measure(false).await?;
+            }
+            measure(self.options.zero_rtt).await
+        }))
+    }
+
+    /// Measures `target` via HTTP/2, after a warm-up request with 0-RTT.
     #[cfg(feature = "http2")]
     fn measure_http2(&self, target: &Target, deadline: Deadline) -> Result<TtfbOutcome, TtfbError> {
-        run_in_tokio(deadline.run(http2::measure(target, Arc::clone(&self.tls_config))))
+        self.measure_async(deadline, |early_data| {
+            http2::measure(target, Arc::clone(&self.tls_config), early_data)
+        })
     }
 
     /// Fails, as the crate was built without the `http2` feature.
@@ -143,11 +179,12 @@ impl TtfbClient {
         ))
     }
 
-    /// Measures `target` via HTTP/3. The asynchronous exchange runs on a
-    /// dedicated Tokio runtime.
+    /// Measures `target` via HTTP/3, after a warm-up request with 0-RTT.
     #[cfg(feature = "http3")]
     fn measure_http3(&self, target: &Target, deadline: Deadline) -> Result<TtfbOutcome, TtfbError> {
-        run_in_tokio(deadline.run(http3::measure(target, Arc::clone(&self.tls_config))))
+        self.measure_async(deadline, |early_data| {
+            http3::measure(target, Arc::clone(&self.tls_config), early_data)
+        })
     }
 
     /// Fails, as the crate was built without the `http3` feature.
@@ -204,6 +241,11 @@ impl TtfbClient {
         self.validate()?;
         let deadline = Deadline::after(self.options.timeout);
         let target = Target::resolve(input.as_ref(), self.options.ip_version, deadline)?;
+        if self.options.zero_rtt && target.url.scheme() != "https" {
+            return Err(TtfbError::UnsupportedHttpProtocol(
+                "0-RTT requires an HTTPS URL".into(),
+            ));
+        }
         let outcome = match self.options.protocol {
             ProtocolSelection::Auto => self.measure_auto(&target, deadline),
             ProtocolSelection::Only(HttpProtocol::Http11) => self.measure_http11(&target, deadline),
@@ -278,6 +320,19 @@ mod tests {
     }
 
     #[test]
+    fn zero_rtt_requires_https() {
+        let result = TtfbClient::new(TtfbOptions {
+            zero_rtt: true,
+            ..TtfbOptions::default()
+        })
+        .measure("http://127.0.0.1");
+        assert!(
+            matches!(result, Err(TtfbError::UnsupportedHttpProtocol(_))),
+            "{result:?}"
+        );
+    }
+
+    #[test]
     fn invalid_timeout() {
         for timeout in [
             Duration::ZERO,
@@ -293,7 +348,7 @@ mod tests {
 #[cfg(all(test, network_tests))]
 mod network_tests {
     use super::*;
-    use crate::ConnectionHandshake;
+    use crate::{ConnectionHandshake, ZeroRtt};
 
     /// Returns the options for the tests, with a longer timeout than the
     /// default, as external sites, such as badssl.com, are sometimes slow.
@@ -468,5 +523,61 @@ mod network_tests {
             .measure("https://expired.badssl.com")
             .unwrap_err();
         assert!(matches!(error, TtfbError::Tls(_)), "{error}");
+    }
+
+    /// These websites accept TLS 1.3 early data. They may change their
+    /// configuration, so a failure can also mean that this list needs an
+    /// update.
+    #[test]
+    fn well_known_websites_accept_zero_rtt() {
+        for protocol in [
+            ProtocolSelection::Auto,
+            ProtocolSelection::Only(HttpProtocol::Http11),
+            #[cfg(feature = "http2")]
+            ProtocolSelection::Only(HttpProtocol::Http2),
+            #[cfg(feature = "http3")]
+            ProtocolSelection::Only(HttpProtocol::Http3),
+        ] {
+            let client = TtfbClient::new(TtfbOptions {
+                protocol,
+                zero_rtt: true,
+                ..options()
+            });
+            for url in [
+                "https://www.google.com",
+                "https://www.facebook.com",
+                "https://www.fastly.com",
+            ] {
+                let outcome = client
+                    .measure(url)
+                    .unwrap_or_else(|error| panic!("{url} {protocol:?}: {error}"));
+                assert_eq!(
+                    outcome.zero_rtt(),
+                    Some(ZeroRtt::Accepted),
+                    "{url} {protocol:?}"
+                );
+                assert_eq!(
+                    outcome.http_get_send_duration().relative(),
+                    Duration::ZERO,
+                    "{url} {protocol:?}"
+                );
+            }
+        }
+    }
+
+    /// These websites don't offer TLS 1.3 early data, see
+    /// [`well_known_websites_accept_zero_rtt`].
+    #[test]
+    fn well_known_websites_without_zero_rtt() {
+        let client = TtfbClient::new(TtfbOptions {
+            zero_rtt: true,
+            ..options()
+        });
+        for url in ["https://www.cloudflare.com", "https://github.com"] {
+            let outcome = client
+                .measure(url)
+                .unwrap_or_else(|error| panic!("{url}: {error}"));
+            assert_eq!(outcome.zero_rtt(), Some(ZeroRtt::Unavailable), "{url}");
+        }
     }
 }

@@ -5,7 +5,7 @@
 use crate::deadline::Deadline;
 use crate::outcome::{Connect, ResponseHead, TtfbTimings};
 use crate::target::Target;
-use crate::{CRATE_VERSION, HttpProtocol, TtfbError, TtfbOutcome, tls};
+use crate::{CRATE_VERSION, HttpProtocol, TtfbError, TtfbOutcome, ZeroRtt, tls};
 use http::header::{CONTENT_LENGTH, TRANSFER_ENCODING};
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
@@ -83,16 +83,22 @@ pub enum Framing {
 /// Sets the following default headers:
 /// - `Accept-Encoding: gzip, deflate, br, zstd` (default of Chrome v123)
 /// - `User-Agent: ttfb/<version>`
-fn build_request(url: &Url) -> String {
+/// - `Connection: close` with `close_connection`
+fn build_request(url: &Url, close_connection: bool) -> String {
     let path = &url[url::Position::BeforePath..url::Position::AfterQuery];
     let host = &url[url::Position::BeforeHost..url::Position::AfterPort];
+    let connection = if close_connection {
+        "Connection: close\r\n"
+    } else {
+        ""
+    };
     format!(
         "GET {path} HTTP/1.1\r\n\
         Host: {host}\r\n\
         User-Agent: ttfb/{CRATE_VERSION}\r\n\
         Accept: */*\r\n\
         Accept-Encoding: gzip, deflate, br, zstd\r\n\
-        Connection: close\r\n\
+        {connection}\
         \r\n"
     )
 }
@@ -341,48 +347,113 @@ fn tcp_connect(
     Ok((tcp, tcp_connect_duration))
 }
 
+/// A connection that is ready for the HTTP exchange.
+struct Connection {
+    /// The TCP stream, or the TLS stream on top of it.
+    stream: Box<dyn IoReadAndWrite>,
+    /// The duration of the TLS handshake, if TLS is used.
+    tls_handshake_duration: Option<Duration>,
+    /// What happened to the early request, if there was one.
+    zero_rtt: Option<ZeroRtt>,
+}
+
+/// Writes `request` as TLS 1.3 early data, which goes out together with the
+/// ClientHello. Returns `false` if the resumed session doesn't permit early
+/// data or the request exceeds the amount the server accepts.
+fn write_early_data(connection: &mut ClientConnection, request: &[u8]) -> Result<bool, TtfbError> {
+    let Some(mut early_data) = connection
+        .early_data()
+        .filter(|early_data| early_data.bytes_left() >= request.len())
+    else {
+        return Ok(false);
+    };
+    early_data
+        .write_all(request)
+        .map_err(TtfbError::CantConnectHttp)?;
+    Ok(true)
+}
+
 /// If the scheme is "https", this replaces the TCP-Stream with a `TLS<TCP>`-stream.
 /// If TLS is used, it measures the time of the TLS handshake.
+///
+/// With `early_request`, the request is sent as TLS 1.3 early data if
+/// possible.
 fn tls_handshake_if_necessary(
     mut tcp: DeadlineStream,
     url: &Url,
     tls_config: Arc<ClientConfig>,
-) -> Result<(Box<dyn IoReadAndWrite>, Option<Duration>), TtfbError> {
-    if url.scheme() == "https" {
-        let server_name = tls::server_name(url)?;
-        let now = Instant::now();
-        let mut connection = ClientConnection::new(tls_config, server_name)
-            .map_err(|error| TtfbError::Tls(error.to_string()))?;
-        // Performs IO until the handshake is complete.
-        connection
-            .complete_io(&mut tcp)
-            .map_err(|error| TtfbError::Tls(error.to_string()))?;
-        let tls_handshake_duration = now.elapsed();
-        Ok((
-            Box::new(StreamOwned::new(connection, tcp)),
-            Some(tls_handshake_duration),
-        ))
-    } else {
-        Ok((Box::new(tcp), None))
+    early_request: Option<&[u8]>,
+) -> Result<Connection, TtfbError> {
+    if url.scheme() != "https" {
+        return Ok(Connection {
+            stream: Box::new(tcp),
+            tls_handshake_duration: None,
+            zero_rtt: None,
+        });
     }
+    let server_name = tls::server_name(url)?;
+    let now = Instant::now();
+    let mut connection = ClientConnection::new(tls_config, server_name)
+        .map_err(|error| TtfbError::Tls(error.to_string()))?;
+    let early_data_written = match early_request {
+        Some(request) => Some(write_early_data(&mut connection, request)?),
+        None => None,
+    };
+    // Performs IO until the handshake is complete.
+    connection
+        .complete_io(&mut tcp)
+        .map_err(|error| TtfbError::Tls(error.to_string()))?;
+    let tls_handshake_duration = now.elapsed();
+    let zero_rtt = early_data_written.map(|written| match written {
+        false => ZeroRtt::Unavailable,
+        true if connection.is_early_data_accepted() => ZeroRtt::Accepted,
+        true => ZeroRtt::Rejected,
+    });
+    Ok(Connection {
+        stream: Box::new(StreamOwned::new(connection, tcp)),
+        tls_handshake_duration: Some(tls_handshake_duration),
+        zero_rtt,
+    })
 }
 
 /// Measures one GET request via HTTP/1.1: TCP connect, the TLS handshake for
 /// HTTPS, sending the request, the first response byte, and the download of
 /// the complete response. Reads and writes fail when `deadline` passes.
+///
+/// With `early_data`, the request is sent as TLS 1.3 early data if the resumed
+/// TLS session permits it. If the server rejects the early data, the request
+/// is sent again after the handshake.
 pub fn measure(
     target: &Target,
     tls_config: Arc<ClientConfig>,
     deadline: Deadline,
+    early_data: bool,
 ) -> Result<TtfbOutcome, TtfbError> {
-    // Connect, with a TLS handshake for HTTPS.
-    let (tcp, tcp_connect_duration) = tcp_connect(target.address, target.port, deadline)?;
-    let (mut tcp, tls_handshake_duration) =
-        tls_handshake_if_necessary(tcp, &target.url, tls_config)?;
+    // A server may answer an early request before it has read the rest of
+    // the handshake. If it then closes the connection as requested, the
+    // unread handshake messages make the kernel reset the connection, which
+    // discards the response in transit. Hence, with early data, the request
+    // keeps the connection open; the response framing tells where the
+    // response ends.
+    let header = build_request(&target.url, !early_data);
 
-    // Send the request.
-    let http_get_send_duration = {
-        let header = build_request(&target.url);
+    // Connect, with a TLS handshake for HTTPS, which may carry the request.
+    let (tcp, tcp_connect_duration) = tcp_connect(target.address, target.port, deadline)?;
+    let Connection {
+        stream: mut tcp,
+        tls_handshake_duration,
+        zero_rtt,
+    } = tls_handshake_if_necessary(
+        tcp,
+        &target.url,
+        tls_config,
+        early_data.then_some(header.as_bytes()),
+    )?;
+
+    // Send the request, unless the server accepted it as early data.
+    let http_get_send_duration = if zero_rtt == Some(ZeroRtt::Accepted) {
+        Duration::ZERO
+    } else {
         let now = Instant::now();
         tcp.write_all(header.as_bytes())
             .map_err(TtfbError::CantConnectHttp)?;
@@ -422,6 +493,7 @@ pub fn measure(
         },
         HttpProtocol::Http11,
         response,
+        zero_rtt,
     ))
 }
 
@@ -508,29 +580,30 @@ mod tests {
     #[test]
     fn request_includes_query_and_non_default_port() {
         let url = Url::parse("http://localhost:8080/path?query=yes#fragment").unwrap();
-        let request = build_request(&url);
+        let request = build_request(&url, true);
         assert!(request.starts_with("GET /path?query=yes HTTP/1.1\r\n"));
         assert!(request.contains("\r\nHost: localhost:8080\r\n"));
         assert!(!request.contains("fragment"));
     }
 }
 
-/// Checks the response framing of well-known websites. Sites may change how
-/// they frame responses, so a failure can also mean that this list needs an
-/// update.
+/// Tests against well-known websites.
 #[cfg(all(test, network_tests))]
 mod network_tests {
     use super::*;
     use crate::IpVersion;
     use crate::deadline::Deadline;
+    #[cfg(feature = "http2")]
+    use crate::{http2, run_in_tokio};
 
     /// Requests `url` and returns how the response body was framed.
     fn framing_of(url: &str) -> Result<Framing, TtfbError> {
         let target = Target::resolve(url, IpVersion::Any, Deadline::for_tests())?;
         let (tcp, _) = tcp_connect(target.address, target.port, Deadline::for_tests())?;
-        let (mut stream, _) = tls_handshake_if_necessary(tcp, &target.url, tls::config(false))?;
+        let mut stream =
+            tls_handshake_if_necessary(tcp, &target.url, tls::config(false, false), None)?.stream;
         stream
-            .write_all(build_request(&target.url).as_bytes())
+            .write_all(build_request(&target.url, true).as_bytes())
             .map_err(TtfbError::CantConnectHttp)?;
         let mut first_byte = [0];
         stream
@@ -539,6 +612,8 @@ mod network_tests {
         read_response(stream.as_mut(), first_byte[0]).map(|(_, framing)| framing)
     }
 
+    /// Sites may change how they frame responses, so a failure can also mean
+    /// that this list needs an update.
     #[test]
     fn well_known_websites_cover_all_framings() {
         let cases = [
@@ -564,5 +639,22 @@ mod network_tests {
             })
             .collect::<Vec<_>>();
         assert!(failures.is_empty(), "{failures:#?}");
+    }
+
+    /// A server accepts early data only for the protocol that the resumed
+    /// session negotiated via ALPN [0]. After an HTTP/2 warm-up, servers
+    /// therefore reject the HTTP/1.1 early data, which offers no ALPN.
+    ///
+    /// [0]: https://www.rfc-editor.org/rfc/rfc8446#section-4.2.10
+    #[cfg(feature = "http2")]
+    #[test]
+    fn rejected_early_data_is_sent_again() {
+        let deadline = Deadline::for_tests();
+        let target = Target::resolve("https://www.google.com", IpVersion::Any, deadline).unwrap();
+        let tls_config = tls::config(false, true);
+        run_in_tokio(http2::measure(&target, Arc::clone(&tls_config), false)).unwrap();
+        let outcome = measure(&target, tls_config, deadline, true).unwrap();
+        assert_eq!(outcome.zero_rtt(), Some(ZeroRtt::Rejected));
+        assert!(outcome.status().is_success());
     }
 }

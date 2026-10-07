@@ -18,7 +18,10 @@ use url::{Host, Url};
 /// expired, wrong host), similar to `-k/--insecure` in `curl`. Otherwise, the
 /// system's root certificates and the bundled Mozilla root certificates are
 /// trusted.
-pub fn config(allow_insecure_certificates: bool) -> Arc<ClientConfig> {
+///
+/// With `zero_rtt`, connections resume earlier TLS sessions and may send TLS
+/// 1.3 early data (0-RTT).
+pub fn config(allow_insecure_certificates: bool, zero_rtt: bool) -> Arc<ClientConfig> {
     let builder = ClientConfig::builder_with_provider(Arc::new(ring::default_provider()))
         .with_safe_default_protocol_versions()
         .expect("ring should support the default protocol versions");
@@ -32,10 +35,15 @@ pub fn config(allow_insecure_certificates: bool) -> Arc<ClientConfig> {
         builder.with_root_certificates(roots)
     };
     let mut config = builder.with_no_client_auth();
-    // A client reuses the configuration for all its measurements. Without
-    // resumption, each of them performs a full handshake, which keeps
-    // repeated measurements comparable.
-    config.resumption = Resumption::disabled();
+    if zero_rtt {
+        // Early data requires a session ticket from an earlier connection.
+        config.enable_early_data = true;
+    } else {
+        // A client reuses the configuration for all its measurements. Without
+        // resumption, each of them performs a full handshake, which keeps
+        // repeated measurements comparable.
+        config.resumption = Resumption::disabled();
+    }
     Arc::new(config)
 }
 
