@@ -49,6 +49,8 @@ pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
 pub use http::{HeaderMap, StatusCode};
 pub use outcome::{ConnectionHandshake, DurationPair, HttpProtocol, TtfbOutcome};
 
+#[cfg(feature = "http2")]
+use futures_lite::future;
 use std::{panic, thread};
 use tokio::runtime::Builder;
 #[cfg(any(feature = "http2", feature = "http3"))]
@@ -97,6 +99,19 @@ where
             .join()
             .unwrap_or_else(|panic| panic::resume_unwind(panic))
     })
+}
+
+/// Runs `future` while `driver` drives the connection in the same task.
+///
+/// The driver never completes the race: if the connection ends, `future` fails
+/// on its own.
+#[cfg(feature = "http2")]
+async fn drive<T>(driver: impl Future, future: impl Future<Output = T>) -> T {
+    let driver = async {
+        let _ = driver.await;
+        future::pending().await
+    };
+    future::or(future, driver).await
 }
 
 /// Builds the GET request for HTTP/2 and HTTP/3. Both derive the `:scheme`,

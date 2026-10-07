@@ -4,7 +4,7 @@
 
 use crate::outcome::{Connect, ResponseHead, TtfbTimings};
 use crate::target::Target;
-use crate::{HttpProtocol, TtfbError, TtfbOutcome, build_http_request, tls};
+use crate::{HttpProtocol, TtfbError, TtfbOutcome, build_http_request, drive, tls};
 use h2::client::Builder;
 use rustls::ClientConfig;
 use std::sync::Arc;
@@ -101,39 +101,40 @@ pub async fn measure(
     };
 
     // Send the request after the HTTP/2 connection preface.
-    let (response, send_duration) = {
-        let request = build_http_request(&target.url)?;
-        let begin = Instant::now();
-        let (mut sender, connection) = Builder::new()
-            .initial_window_size(STREAM_WINDOW_SIZE)
-            .initial_connection_window_size(CONNECTION_WINDOW_SIZE)
-            // The request has no body, so any body buffer type works.
-            .handshake::<_, &[u8]>(tls)
-            .await
-            .map_err(http2_error)?;
-        // The connection future drives the HTTP/2 protocol in the background.
-        tokio::spawn(async move {
-            let _ = connection.await;
-        });
+    let request = build_http_request(&target.url)?;
+    let begin = Instant::now();
+    let (mut sender, connection) = Builder::new()
+        .initial_window_size(STREAM_WINDOW_SIZE)
+        .initial_connection_window_size(CONNECTION_WINDOW_SIZE)
+        // The request has no body, so any body buffer type works.
+        .handshake::<_, &[u8]>(tls)
+        .await
+        .map_err(http2_error)?;
+    // The connection future drives the HTTP/2 protocol during the exchange.
+    let exchange = async {
         let (response, _) = sender.send_request(request, true).map_err(http2_error)?;
-        (response, begin.elapsed())
-    };
+        let send_duration = begin.elapsed();
 
-    // Wait for the response headers.
-    let (response, ttfb_duration) = {
-        let begin = Instant::now();
-        let response = response.await.map_err(http2_error)?;
-        (response, begin.elapsed())
-    };
+        // Wait for the response headers.
+        let (response, ttfb_duration) = {
+            let begin = Instant::now();
+            let response = response.await.map_err(http2_error)?;
+            (response, begin.elapsed())
+        };
 
-    let (head, body) = response.into_parts();
+        let (head, body) = response.into_parts();
 
-    // Download the body.
-    let download_duration = {
-        let begin = Instant::now();
-        download_body(body).await?;
-        begin.elapsed()
+        // Download the body.
+        let download_duration = {
+            let begin = Instant::now();
+            download_body(body).await?;
+            begin.elapsed()
+        };
+
+        Ok::<_, TtfbError>((head, send_duration, ttfb_duration, download_duration))
     };
+    let (head, send_duration, ttfb_duration, download_duration) =
+        drive(connection, exchange).await?;
 
     Ok(TtfbOutcome::new(
         target.input.clone(),
