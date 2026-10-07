@@ -5,7 +5,9 @@
 use crate::outcome::{Connect, ResponseHead, TtfbTimings};
 use crate::target::Target;
 use crate::{HttpProtocol, TtfbError, TtfbOutcome, build_http_request, drive, tls};
+use async_io::Timer;
 use bytes::Bytes;
+use futures_lite::future;
 use h3::client as h3_client;
 use quinn::crypto::rustls::QuicClientConfig;
 use rustls::ClientConfig;
@@ -13,7 +15,6 @@ use std::fmt::Display;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::time::timeout;
 
 /// The maximum time to establish the QUIC connection. Networks may drop UDP
 /// silently, and a server without HTTP/3 doesn't answer at all.
@@ -57,10 +58,11 @@ async fn connect(
     let connecting = endpoint
         .connect((target.address, target.port).into(), &server_name.to_str())
         .map_err(unavailable)?;
-    timeout(CONNECT_TIMEOUT, connecting)
-        .await
-        .map_err(|_| unavailable("the connection attempt timed out"))?
-        .map_err(unavailable)
+    let timeout = async {
+        Timer::after(CONNECT_TIMEOUT).await;
+        Err(unavailable("the connection attempt timed out"))
+    };
+    future::or(async { connecting.await.map_err(unavailable) }, timeout).await
 }
 
 /// Measures one GET request via HTTP/3: the QUIC handshake (which includes the
