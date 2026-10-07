@@ -102,7 +102,8 @@ fn resolve_dns(
     // On Unix/Posix systems, this will read: /etc/resolv.conf
     // In the end, this uses the name server of the system or falls back to
     // the library's default (usually Google DNS).
-    let mut builder = DnsResolver::builder_tokio().map_err(TtfbError::CantConfigureDNSError)?;
+    let mut builder = DnsResolver::builder_tokio()
+        .map_err(|error| TtfbError::CantConfigureDNSError(error.to_string()))?;
     builder.options_mut().ip_strategy = match ip_version {
         IpVersion::Any => LookupIpStrategy::Ipv4thenIpv6,
         IpVersion::V4 => LookupIpStrategy::Ipv4Only,
@@ -122,7 +123,7 @@ fn resolve_dns(
                 if ip_version != IpVersion::Any && err.is_no_records_found() {
                     TtfbError::NoAddressForIpVersion(ip_version)
                 } else {
-                    TtfbError::CantResolveDns(ResolveDnsError::Other(Box::new(err)))
+                    TtfbError::CantResolveDns(ResolveDnsError::Other(err.to_string()))
                 }
             })
     }))?;

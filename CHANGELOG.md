@@ -26,6 +26,10 @@ only change something for the binary.
   TLS handshake, or a QUIC handshake for HTTP/3.
 - **BREAKING** `TtfbError` has the new variants `UnsupportedHttpProtocol`,
   `Http2`, and `Http3`.
+- **BREAKING** `ResolveDnsError::Other` and `TtfbError::CantConfigureDNSError`
+  describe the error as a string instead of exposing the `ResolveError` of
+  `hickory-resolver`, so that the DNS resolver can change without a breaking
+  change.
 - TLS trusts the system's root certificates and the bundled Mozilla root
   certificates together. Previously, the bundled ones were only used if the
   system's could not be loaded.

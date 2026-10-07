@@ -3,39 +3,19 @@
 //! Module for [`TtfbError`].
 
 use crate::IpVersion;
-use hickory_resolver::{ResolveError, ResolveErrorKind};
 use std::io;
 use std::time::Duration;
 use thiserror::Error;
 
 /// Errors during DNS resolving.
-#[derive(Clone, Debug, Error)]
+#[derive(Clone, Debug, Error, Eq, PartialEq, Hash)]
 pub enum ResolveDnsError {
     /// Can't find DNS entry for the given host.
     #[error("Can't find DNS entry for the given host.")]
     NoResults,
     /// Couldn't resolve DNS for given host.
     #[error("Couldn't resolve DNS for given host because: {0}")]
-    Other(#[source] Box<ResolveError>),
-}
-
-impl PartialEq for ResolveDnsError {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::NoResults, Self::NoResults) => true,
-            (Self::Other(e1), Self::Other(e2)) => match (e1.kind(), e2.kind()) {
-                (ResolveErrorKind::Msg(msg1), ResolveErrorKind::Msg(msg2)) => msg1.eq(msg2),
-                (ResolveErrorKind::Message(msg1), ResolveErrorKind::Message(msg2)) => msg1.eq(msg2),
-                (ResolveErrorKind::Proto(_e1), ResolveErrorKind::Proto(_e2)) => {
-                    // nah, ignore it. Proper deep check is too complex.
-                    // Shortcut is good enough for the sake of the library.
-                    true
-                }
-                _ => false,
-            },
-            _ => false,
-        }
-    }
+    Other(String),
 }
 
 /// Errors during URL parsing.
@@ -115,9 +95,9 @@ pub enum TtfbError {
     /// [`TtfbOptions::ip_version`]: crate::TtfbOptions::ip_version
     #[error("The host has no {0} address")]
     NoAddressForIpVersion(IpVersion),
-    /// Can't configure trust-dns-resolver configuration.
+    /// Can't configure the DNS resolver from the system or default settings.
     #[error("Failed to configure DNS based on system or default settings: {0}")]
-    CantConfigureDNSError(#[source] ResolveError),
+    CantConfigureDNSError(String),
 }
 
 impl PartialEq for TtfbError {
@@ -131,12 +111,8 @@ impl PartialEq for TtfbError {
             (Self::Tls(e1), Self::Tls(e2))
             | (Self::UnsupportedHttpProtocol(e1), Self::UnsupportedHttpProtocol(e2))
             | (Self::Http2(e1), Self::Http2(e2))
-            | (Self::Http3(e1), Self::Http3(e2)) => e1.eq(e2),
-            (Self::CantConfigureDNSError(_e1), Self::CantConfigureDNSError(_e2)) => {
-                // nah, ignore it. Proper deep check is too complex.
-                // Shortcut is good enough for the sake of the library.
-                true
-            }
+            | (Self::Http3(e1), Self::Http3(e2))
+            | (Self::CantConfigureDNSError(e1), Self::CantConfigureDNSError(e2)) => e1.eq(e2),
             (Self::NoHttpResponse, Self::NoHttpResponse) => true,
             (Self::InvalidHttpResponse(e1), Self::InvalidHttpResponse(e2)) => e1.eq(e2),
             (Self::Timeout(t1), Self::Timeout(t2))
