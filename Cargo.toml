@@ -59,7 +59,8 @@ tokio-rustls = { version = "0.26.4", optional = true, default-features = false, 
 bytes = { version = "1.10.1", optional = true }
 h3 = { version = "0.0.8", optional = true }
 h3-quinn = { version = "0.0.10", optional = true }
-quinn = { version = "0.11.7", optional = true, default-features = false, features = ["ring", "runtime-tokio", "rustls"] }
+# The smol runtime is based on async-io and works with every executor.
+quinn = { version = "0.11.7", optional = true, default-features = false, features = ["ring", "runtime-smol", "rustls"] }
 
 thiserror = "2.0.12"
 # DNS over systems default DNS resolver
