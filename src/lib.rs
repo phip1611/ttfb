@@ -49,7 +49,7 @@ pub use error::{InvalidUrlError, ResolveDnsError, TtfbError};
 pub use http::{HeaderMap, StatusCode};
 pub use outcome::{ConnectionHandshake, DurationPair, HttpProtocol, TtfbOutcome};
 
-#[cfg(feature = "http2")]
+#[cfg(any(feature = "http2", feature = "http3"))]
 use futures_lite::future;
 use std::{panic, thread};
 use tokio::runtime::Builder;
@@ -105,7 +105,7 @@ where
 ///
 /// The driver never completes the race: if the connection ends, `future` fails
 /// on its own.
-#[cfg(feature = "http2")]
+#[cfg(any(feature = "http2", feature = "http3"))]
 async fn drive<T>(driver: impl Future, future: impl Future<Output = T>) -> T {
     let driver = async {
         let _ = driver.await;

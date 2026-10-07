@@ -4,7 +4,7 @@
 
 use crate::outcome::{Connect, ResponseHead, TtfbTimings};
 use crate::target::Target;
-use crate::{HttpProtocol, TtfbError, TtfbOutcome, build_http_request, tls};
+use crate::{HttpProtocol, TtfbError, TtfbOutcome, build_http_request, drive, tls};
 use bytes::Bytes;
 use h3::client as h3_client;
 use quinn::crypto::rustls::QuicClientConfig;
@@ -86,7 +86,7 @@ pub async fn measure(
         (connection, begin.elapsed())
     };
 
-    // The driver drives the HTTP/3 connection in the background. GREASE is
+    // The driver drives the HTTP/3 connection during the exchange. GREASE is
     // disabled, as some servers reset the request when they receive a GREASE
     // frame on the request stream.
     let (mut driver, mut sender) = h3_client::builder()
@@ -94,32 +94,34 @@ pub async fn measure(
         .build::<_, _, Bytes>(h3_quinn::Connection::new(connection))
         .await
         .map_err(http3_error)?;
-    tokio::spawn(async move {
-        driver.wait_idle().await;
-    });
+    let exchange = async {
+        // Send the request.
+        let (mut stream, send_duration) = {
+            let request = build_http_request(&target.url)?;
+            let begin = Instant::now();
+            let mut stream = sender.send_request(request).await.map_err(http3_error)?;
+            stream.finish().await.map_err(http3_error)?;
+            (stream, begin.elapsed())
+        };
 
-    // Send the request.
-    let (mut stream, send_duration) = {
-        let request = build_http_request(&target.url)?;
-        let begin = Instant::now();
-        let mut stream = sender.send_request(request).await.map_err(http3_error)?;
-        stream.finish().await.map_err(http3_error)?;
-        (stream, begin.elapsed())
-    };
+        // Wait for the response headers.
+        let (head, ttfb_duration) = {
+            let begin = Instant::now();
+            let response = stream.recv_response().await.map_err(http3_error)?;
+            (response.into_parts().0, begin.elapsed())
+        };
 
-    // Wait for the response headers.
-    let (head, ttfb_duration) = {
-        let begin = Instant::now();
-        let response = stream.recv_response().await.map_err(http3_error)?;
-        (response.into_parts().0, begin.elapsed())
-    };
+        // Download the body.
+        let download_duration = {
+            let begin = Instant::now();
+            while stream.recv_data().await.map_err(http3_error)?.is_some() {}
+            begin.elapsed()
+        };
 
-    // Download the body.
-    let download_duration = {
-        let begin = Instant::now();
-        while stream.recv_data().await.map_err(http3_error)?.is_some() {}
-        begin.elapsed()
+        Ok::<_, TtfbError>((head, send_duration, ttfb_duration, download_duration))
     };
+    let (head, send_duration, ttfb_duration, download_duration) =
+        drive(driver.wait_idle(), exchange).await?;
 
     Ok(TtfbOutcome::new(
         target.input.clone(),
