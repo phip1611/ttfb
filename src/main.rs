@@ -24,6 +24,7 @@
 use clap::Parser;
 use crossterm::ExecutableCommand;
 use crossterm::style::{Attribute, SetAttribute};
+use serde_json::to_string;
 use std::array;
 use std::fmt::{self, Display, Formatter};
 use std::io::stdout;
@@ -176,6 +177,9 @@ struct TtfbArgs {
     /// print those of the first measurement.
     #[arg(long)]
     headers: bool,
+    /// Print the results only as JSON in a single line.
+    #[arg(long)]
+    json: bool,
 }
 
 /// Small CLI binary wrapper around the [`ttfb`] lib.
@@ -203,7 +207,15 @@ fn main() {
         timeout: Duration::from_secs(input.timeout),
         ip_version,
     };
-    if let Some(repeat) = input.repeat {
+    if input.json {
+        // Without --repeat, a single run is one measurement.
+        let repeat = input
+            .repeat
+            .unwrap_or(RepeatInput::Times(NonZeroUsize::MIN));
+        let res = measure_repeatedly(options, &input.host, repeat);
+        let outcomes = unwrap_or_exit!(res);
+        print_json(&outcomes);
+    } else if let Some(repeat) = input.repeat {
         let res = measure_repeatedly(options, &input.host, repeat);
         let outcomes = unwrap_or_exit!(res);
         print_statistics(&outcomes).unwrap();
@@ -461,6 +473,13 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
     Ok(())
 }
 
+/// Prints the JSON output of `outcomes`.
+fn print_json(outcomes: &[TtfbOutcome]) {
+    let output = json::JsonOutput::new(outcomes);
+    let json = to_string(&output).expect("should serialize, as all map keys are strings");
+    println!("{json}");
+}
+
 /// Prints the status line and the headers of the response.
 fn print_headers(ttfb: &TtfbOutcome) -> Result<(), String> {
     println!();
@@ -518,6 +537,36 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// The JSON output of the measurements.
+///
+/// Its only export is [`JsonOutput`], which [`JsonOutput::new`] creates from
+/// the measurements, and which serializes to the JSON format.
+mod json {
+    use serde::Serialize;
+    use ttfb::TtfbOutcome;
+
+    /// The version of the JSON output. It increases with incompatible changes.
+    const JSON_SCHEMA_VERSION: u32 = 1;
+
+    /// The JSON output of one or more measurements of the same target.
+    #[derive(Debug, Serialize)]
+    pub(super) struct JsonOutput {
+        schema_version: u32,
+        /// The number of measurements.
+        measurements_num: usize,
+    }
+
+    impl JsonOutput {
+        /// Creates the output of `outcomes`.
+        pub(super) const fn new(outcomes: &[TtfbOutcome]) -> Self {
+            Self {
+                schema_version: JSON_SCHEMA_VERSION,
+                measurements_num: outcomes.len(),
+            }
+        }
+    }
 }
 
 #[cfg(test)]

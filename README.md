@@ -55,6 +55,13 @@ With `--headers`, the CLI also prints the status line and the headers of the
 response, which often explain the timings, e.g., `cache-status` or
 `server-timing`. With `--repeat`, it prints those of the first measurement.
 
+With `--json`, the CLI prints the results only as JSON in a single line, e.g.,
+for scripts.
+
+The JSON format may get new fields at any time, so scripts should ignore
+unknown fields. `schema_version` increases if a field is removed or changes
+its type.
+
 ## Usage Library
 The library exposes `TtfbClient`, which is configured with `TtfbOptions`:
 
