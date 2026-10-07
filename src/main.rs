@@ -211,9 +211,10 @@ fn main() {
         let repeat = input
             .repeat
             .unwrap_or(RepeatInput::Times(NonZeroUsize::MIN));
+        let json_options = json::JsonOptions::new(&input.host, &options, repeat);
         let started_at = SystemTime::now();
         let result = measure_repeatedly(options, &input.host, repeat);
-        print_json(started_at, &result);
+        print_json(json_options, started_at, &result);
         if result.is_err() {
             exit(-1);
         }
@@ -476,8 +477,12 @@ fn print_statistics(outcomes: &[TtfbOutcome]) -> Result<(), String> {
 }
 
 /// Prints the JSON output of the measurements that started at `started_at`.
-fn print_json(started_at: SystemTime, result: &Result<Vec<TtfbOutcome>, TtfbError>) {
-    let output = json::JsonOutput::new(started_at, result);
+fn print_json(
+    options: json::JsonOptions,
+    started_at: SystemTime,
+    result: &Result<Vec<TtfbOutcome>, TtfbError>,
+) {
+    let output = json::JsonOutput::new(options, started_at, result);
     let json = to_string(&output).expect("should serialize, as all map keys are strings");
     println!("{json}");
 }
@@ -546,14 +551,14 @@ fn print_outcome(ttfb: &TtfbOutcome) -> Result<(), String> {
 /// Its only export is [`JsonOutput`], which [`JsonOutput::new`] creates from
 /// the measurements or their error, and which serializes to the JSON format.
 mod json {
-    use super::{CRATE_VERSION, calc_statistics_from_durations, step_durations};
+    use super::{CRATE_VERSION, RepeatInput, calc_statistics_from_durations, step_durations};
     use humantime::format_rfc3339_millis;
     use serde::{Serialize, Serializer};
     use serde_json::value::RawValue;
     use std::collections::BTreeMap;
     use std::net::IpAddr;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
-    use ttfb::{ProtocolSelection, TtfbError, TtfbOutcome};
+    use ttfb::{IpVersion, ProtocolSelection, TtfbError, TtfbOptions, TtfbOutcome};
 
     /// The version of the JSON output. It increases with incompatible changes.
     const JSON_SCHEMA_VERSION: u32 = 1;
@@ -710,11 +715,59 @@ mod json {
         }
     }
 
+    /// How often or how long the measurement is repeated.
+    #[derive(Debug, Serialize)]
+    #[serde(rename_all = "snake_case")]
+    enum JsonRepeat {
+        Times(usize),
+        DurationMs(u128),
+    }
+
+    /// The configuration of the measurements in the JSON output.
+    #[derive(Debug, Serialize)]
+    pub(super) struct JsonOptions {
+        /// The URL as given by the user.
+        input: String,
+        /// "auto" or the required protocol, e.g., "HTTP/2".
+        protocol: String,
+        /// "any", "ipv4", or "ipv6".
+        ip_version: &'static str,
+        allow_insecure_certificates: bool,
+        timeout_ms: u128,
+        repeat: JsonRepeat,
+    }
+
+    impl JsonOptions {
+        /// Returns the configuration of measuring `input` with `options`, as
+        /// often or as long as `repeat` says.
+        pub(super) fn new(input: &str, options: &TtfbOptions, repeat: RepeatInput) -> Self {
+            Self {
+                input: input.to_string(),
+                protocol: match options.protocol {
+                    ProtocolSelection::Auto => "auto".to_string(),
+                    ProtocolSelection::Only(protocol) => protocol.to_string(),
+                },
+                ip_version: match options.ip_version {
+                    IpVersion::Any => "any",
+                    IpVersion::V4 => "ipv4",
+                    IpVersion::V6 => "ipv6",
+                },
+                allow_insecure_certificates: options.allow_insecure_certificates,
+                timeout_ms: options.timeout.as_millis(),
+                repeat: match repeat {
+                    RepeatInput::Times(times) => JsonRepeat::Times(times.get()),
+                    RepeatInput::Duration(duration) => JsonRepeat::DurationMs(duration.as_millis()),
+                },
+            }
+        }
+    }
+
     /// The JSON output of one or more measurements of the same target.
     #[derive(Debug, Serialize)]
     pub(super) struct JsonOutput {
         schema_version: u32,
         ttfb_version: &'static str,
+        options: JsonOptions,
         /// When the first measurement started, in RFC 3339 format in UTC.
         started_at: String,
         /// When the first measurement started, as Unix timestamp in ms.
@@ -732,10 +785,11 @@ mod json {
     }
 
     impl JsonOutput {
-        /// Creates the output of the measurements that started at
-        /// `started_at`: either all of them or the error of the one that
+        /// Creates the output of the measurements with `options` that started
+        /// at `started_at`: either all of them or the error of the one that
         /// failed.
         pub(super) fn new(
+            options: JsonOptions,
             started_at: SystemTime,
             result: &Result<Vec<TtfbOutcome>, TtfbError>,
         ) -> Self {
@@ -746,6 +800,7 @@ mod json {
             Self {
                 schema_version: JSON_SCHEMA_VERSION,
                 ttfb_version: CRATE_VERSION,
+                options,
                 started_at: format_rfc3339_millis(started_at).to_string(),
                 started_at_unix_ms: started_at
                     .duration_since(UNIX_EPOCH)
@@ -763,6 +818,7 @@ mod json {
     mod tests {
         use super::*;
         use serde_json::{to_string, to_string_pretty};
+        use std::num::NonZeroUsize;
 
         #[test]
         fn json_step_statistics_keep_the_order_of_the_steps() {
@@ -815,11 +871,19 @@ mod json {
 
         #[test]
         fn json_output_of_an_error() {
-            let output = JsonOutput::new(UNIX_EPOCH, &Err(TtfbError::NoHttpResponse));
+            let options = JsonOptions::new(
+                "http://127.0.0.1",
+                &TtfbOptions::default(),
+                RepeatInput::Times(NonZeroUsize::MIN),
+            );
+            let output = JsonOutput::new(options, UNIX_EPOCH, &Err(TtfbError::NoHttpResponse));
             let expected = concat!(
                 r#"{"schema_version":1,"ttfb_version":""#,
                 env!("CARGO_PKG_VERSION"),
-                r#"","started_at":"1970-01-01T00:00:00.000Z","#,
+                r#"","options":{"input":"http://127.0.0.1","protocol":"auto","#,
+                r#""ip_version":"any","allow_insecure_certificates":false,"#,
+                r#""timeout_ms":10000,"repeat":{"times":1}},"#,
+                r#""started_at":"1970-01-01T00:00:00.000Z","#,
                 r#""started_at_unix_ms":0,"#,
                 r#""error":{"kind":"http","#,
                 r#""message":"Didn't receive any data. Is the host running a HTTP server?"},"#,
