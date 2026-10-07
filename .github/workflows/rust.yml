@@ -126,6 +126,22 @@ jobs:
         timeout-minutes: 2
         run: ./check-json-output.sh
 
+  # Runs the CLI with combinations of its options.
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --features bin
+      - name: Check the CLI
+        timeout-minutes: 5
+        run: ./check-cli.sh
+
   style_checks:
     runs-on: ubuntu-latest
     steps:
