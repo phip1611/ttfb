@@ -12,6 +12,7 @@ use crate::run_in_tokio;
 use crate::target::Target;
 use crate::{HttpProtocol, TtfbError, TtfbOutcome, http11, tls};
 use rustls::ClientConfig;
+use std::fmt::{self, Display, Formatter};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -26,6 +27,33 @@ pub enum ProtocolSelection {
     Only(HttpProtocol),
 }
 
+/// Which IP version a [`TtfbClient`] uses to connect to the host.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub enum IpVersion {
+    /// Use IPv4 if the host has an IPv4 address, otherwise IPv6.
+    ///
+    /// Unlike browsers and curl, which try IPv6 and IPv4 in parallel ("Happy
+    /// Eyeballs"), a measurement connects only once, so that its timings
+    /// don't depend on a race. IPv4 works on most networks.
+    #[default]
+    Any,
+    /// Use only IPv4.
+    V4,
+    /// Use only IPv6.
+    V6,
+}
+
+impl Display for IpVersion {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Self::Any => "IPv4 or IPv6",
+            Self::V4 => "IPv4",
+            Self::V6 => "IPv6",
+        };
+        f.write_str(name)
+    }
+}
+
 /// Configuration for [`TtfbClient`].
 #[derive(Clone, Debug)]
 pub struct TtfbOptions {
@@ -37,6 +65,10 @@ pub struct TtfbOptions {
     /// The maximum duration of a measurement, from the DNS lookup to the end
     /// of the download. Defaults to [`TtfbOptions::DEFAULT_TIMEOUT`].
     pub timeout: Duration,
+    /// The IP version to connect with. With [`IpVersion::V4`] or
+    /// [`IpVersion::V6`], measurements of a host without an address of that
+    /// version fail with [`TtfbError::NoAddressForIpVersion`].
+    pub ip_version: IpVersion,
 }
 
 impl TtfbOptions {
@@ -54,6 +86,7 @@ impl Default for TtfbOptions {
             protocol: ProtocolSelection::default(),
             allow_insecure_certificates: false,
             timeout: Self::DEFAULT_TIMEOUT,
+            ip_version: IpVersion::default(),
         }
     }
 }
@@ -170,7 +203,7 @@ impl TtfbClient {
     pub fn measure(&self, input: impl AsRef<str>) -> Result<TtfbOutcome, TtfbError> {
         self.validate()?;
         let deadline = Deadline::after(self.options.timeout);
-        let target = Target::resolve(input.as_ref(), deadline)?;
+        let target = Target::resolve(input.as_ref(), self.options.ip_version, deadline)?;
         let outcome = match self.options.protocol {
             ProtocolSelection::Auto => self.measure_auto(&target, deadline),
             ProtocolSelection::Only(HttpProtocol::Http11) => self.measure_http11(&target, deadline),

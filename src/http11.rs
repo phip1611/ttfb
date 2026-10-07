@@ -521,11 +521,12 @@ mod tests {
 #[cfg(all(test, network_tests))]
 mod network_tests {
     use super::*;
+    use crate::IpVersion;
     use crate::deadline::Deadline;
 
     /// Requests `url` and returns how the response body was framed.
     fn framing_of(url: &str) -> Result<Framing, TtfbError> {
-        let target = Target::resolve(url, Deadline::for_tests())?;
+        let target = Target::resolve(url, IpVersion::Any, Deadline::for_tests())?;
         let (tcp, _) = tcp_connect(target.address, target.port, Deadline::for_tests())?;
         let (mut stream, _) = tls_handshake_if_necessary(tcp, &target.url, tls::config(false))?;
         stream

@@ -2,6 +2,7 @@
 
 //! Module for [`TtfbError`].
 
+use crate::IpVersion;
 use hickory_resolver::{ResolveError, ResolveErrorKind};
 use std::io;
 use std::time::Duration;
@@ -108,6 +109,12 @@ pub enum TtfbError {
         max = crate::TtfbOptions::MAX_TIMEOUT
     )]
     InvalidTimeout(Duration),
+    /// The host has no address of the IP version of
+    /// [`TtfbOptions::ip_version`].
+    ///
+    /// [`TtfbOptions::ip_version`]: crate::TtfbOptions::ip_version
+    #[error("The host has no {0} address")]
+    NoAddressForIpVersion(IpVersion),
     /// Can't configure trust-dns-resolver configuration.
     #[error("Failed to configure DNS based on system or default settings: {0}")]
     CantConfigureDNSError(#[source] ResolveError),
@@ -133,6 +140,7 @@ impl PartialEq for TtfbError {
             (Self::InvalidHttpResponse(e1), Self::InvalidHttpResponse(e2)) => e1.eq(e2),
             (Self::Timeout(t1), Self::Timeout(t2))
             | (Self::InvalidTimeout(t1), Self::InvalidTimeout(t2)) => t1.eq(t2),
+            (Self::NoAddressForIpVersion(v1), Self::NoAddressForIpVersion(v2)) => v1.eq(v2),
             _ => false,
         }
     }

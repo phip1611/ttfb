@@ -36,6 +36,10 @@ servers without HTTP/3, the HTTP/3 attempt usually waits for its timeout of
 1 s, which prolongs the run but not the measured timings. Use `--http1.1`,
 `--http2`, or `--http3` to require a protocol.
 
+For hosts with IPv4 and IPv6 addresses, the CLI connects via IPv4. Use
+`-4/--ipv4` or `-6/--ipv6` to require an IP version, like in `curl`. A
+measurement fails if the host has no address of that version.
+
 With `--repeat N`, the CLI measures N times, and with `--repeat Ns`
 repeatedly for N seconds. Then, it prints the minimum, median, mean, and
 maximum of the relative and the absolute duration of each step. All
