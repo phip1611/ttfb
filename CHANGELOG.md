@@ -60,6 +60,10 @@ only change something for the binary.
 - `TtfbOutcome::status()` and `TtfbOutcome::headers()` return the status code
   and the headers of the final response. The types `StatusCode` and
   `HeaderMap` of the `http` crate are re-exported.
+- Added `TtfbClient::measure_async()`, which works with every executor, such
+  as the ones of Tokio or smol. `TtfbClient::measure()` blocks on it. The
+  measurements no longer start a Tokio runtime, except for the DNS lookup,
+  which runs on a helper thread, as `hickory-resolver` requires Tokio.
 
 ## ttfb binary
 

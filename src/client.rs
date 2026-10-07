@@ -169,6 +169,16 @@ impl TtfbClient {
         Ok(())
     }
 
+    /// Measures one GET request to `input` and blocks until it completes.
+    ///
+    /// This is the blocking variant of [`TtfbClient::measure_async`], which
+    /// describes `input`. Async code should use that instead, as this blocks
+    /// the thread of the executor.
+    pub fn measure(&self, input: impl AsRef<str>) -> Result<TtfbOutcome, TtfbError> {
+        // async-io's block_on also drives the reactor on this thread.
+        async_io::block_on(self.measure_async(input))
+    }
+
     /// Measures one GET request to `input`.
     ///
     /// `input` is a URL pointing to an HTTP server, such as:
@@ -181,13 +191,11 @@ impl TtfbClient {
     /// - `https://1.1.1.1`
     /// - `12.34.56.78/foobar` (defaults to `http://`)
     /// - `12.34.56.78` (defaults to `http://`)
-    pub fn measure(&self, input: impl AsRef<str>) -> Result<TtfbOutcome, TtfbError> {
-        // async-io's block_on also drives the reactor on this thread.
-        async_io::block_on(self.measure_async(input))
-    }
-
-    /// Measures one GET request to `input` asynchronously.
-    async fn measure_async(&self, input: impl AsRef<str>) -> Result<TtfbOutcome, TtfbError> {
+    ///
+    /// The future works with every executor, such as the ones of Tokio or
+    /// smol: async-io drives the I/O and the timers on its own thread, and the
+    /// DNS lookup runs on a helper thread.
+    pub async fn measure_async(&self, input: impl AsRef<str>) -> Result<TtfbOutcome, TtfbError> {
         self.validate()?;
         let deadline = Deadline::after(self.options.timeout);
         let target = Target::resolve(input.as_ref(), self.options.ip_version, deadline).await?;
@@ -272,6 +280,14 @@ mod tests {
             TIMEOUT,
         );
         assert_eq!(result, Err(TtfbError::Timeout(TIMEOUT)));
+    }
+
+    /// The future must be [`Send`] to run on multi-threaded executors.
+    #[test]
+    fn measure_async_is_send() {
+        fn assert_send(_: &impl Send) {}
+        let client = TtfbClient::new(TtfbOptions::default());
+        assert_send(&client.measure_async("http://127.0.0.1"));
     }
 
     #[test]
