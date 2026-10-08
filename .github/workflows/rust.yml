@@ -14,7 +14,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build_binary:
+  build_and_test:
     strategy:
       fail-fast: false
       matrix:
@@ -28,45 +28,38 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ matrix.rust }}
+      # The cli job shares the cache. Its key contains the OS already.
       - uses: Swatinem/rust-cache@v2
         with:
-          key: "${{ matrix.runs-on }}-${{ matrix.rust }}"
-      - name: cargo check (debug)
-        run: cargo check --all-targets --features bin
-      - name: cargo check (release)
-        run: cargo check --all-targets --features bin --release
+          shared-key: ${{ matrix.rust }}
       - name: cargo build (debug)
         run: cargo build --all-targets --features bin
       - name: cargo build (release)
-        run: cargo build --all-targets --features bin --release
+        run: cargo build --features bin --release
       - name: cargo test
-        run: cargo test
+        run: cargo test --all-targets --features bin
       # Test that we don't segfault or so because of the LTO.
       - name: "CLI [release]: ttfb --help"
         run: cargo run --release --features bin -- --help
       - name: "CLI [release]: ttfb github.com"
         run: cargo run --release --features bin -- github.com
 
-  # The lib is already transitively build above. Here, we only verify the MSRV.
-  # The rust toolchain comes from `rust-toolchain.toml`.
+  # Checks the library with dependencies resolved from scratch, as for a new
+  # user of the crate, while build_and_test uses Cargo.lock. Cargo picks the
+  # newest versions that declare support for the MSRV, so this catches new
+  # releases that break it without declaring it.
   build_library_msrv:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Build Lib as Dependency with MSRV
-        run: cd ttfb-lib-msrv-check && cargo check --all-targets
-
-  tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Build
-        run: cargo test --all-targets
+          toolchain: 1.85.0
+      - name: Resolve the dependencies from scratch
+        run: cargo generate-lockfile
+      - name: Check the library
+        run: cargo check --lib
 
   # Each protocol has a Cargo feature. Without it, the code paths that report
   # the protocol as unsupported are built instead.
@@ -110,37 +103,60 @@ jobs:
         timeout-minutes: 2
         run: cargo test -- network_tests
 
-  # Checks the format of the JSON output, as scripts depend on it.
-  json_output:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Build
-        run: cargo build --features bin
-      - name: Check the JSON output
-        timeout-minutes: 2
-        run: ./check-json-output.sh
-
-  # Runs the CLI with combinations of its options.
+  # Runs the CLI with combinations of its options and checks the format of
+  # its JSON output, as scripts depend on it. Both use the OS's network stack
+  # and certificate store, so check every OS.
   cli:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: macos-latest
+            ttfb: target/debug/ttfb
+          - runs-on: ubuntu-latest
+            ttfb: target/debug/ttfb
+          - runs-on: windows-latest
+            ttfb: target/debug/ttfb.exe
+    runs-on: ${{ matrix.runs-on }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
+      # The image has WSL as well, whose bash would run the checks in a Linux
+      # VM. Ensure that bash is Git Bash and that it runs the native ttfb.exe.
+      - name: Check that bash runs natively on Windows
+        if: runner.os == 'Windows'
+        run: |
+          echo "bash: $(command -v bash), $(uname -s)"
+          case $(uname -s) in
+              MINGW* | MSYS*) ;;
+              *) echo "bash isn't Git Bash" >&2; exit 1 ;;
+          esac
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: stable
+          save-if: false
       - name: Build
         run: cargo build --features bin
+      - name: Check that ttfb is a native Windows executable
+        if: runner.os == 'Windows'
+        run: |
+          # Every PE executable starts with "MZ".
+          if [ "$(head -c 2 '${{ matrix.ttfb }}')" != MZ ]; then
+              echo "${{ matrix.ttfb }} isn't a PE executable" >&2
+              exit 1
+          fi
       - name: Check the CLI
         timeout-minutes: 5
-        run: ./check-cli.sh
+        run: ./check-cli.sh '${{ matrix.ttfb }}'
+      - name: Check the JSON output
+        timeout-minutes: 2
+        run: ./check-json-output.sh '${{ matrix.ttfb }}'
 
   style_checks:
     runs-on: ubuntu-latest
