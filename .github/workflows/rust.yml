@@ -31,16 +31,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: "${{ matrix.runs-on }}-${{ matrix.rust }}"
-      - name: cargo check (debug)
-        run: cargo check --all-targets --features bin
-      - name: cargo check (release)
-        run: cargo check --all-targets --features bin --release
       - name: cargo build (debug)
         run: cargo build --all-targets --features bin
       - name: cargo build (release)
-        run: cargo build --all-targets --features bin --release
+        run: cargo build --features bin --release
       - name: cargo test
-        run: cargo test
+        run: cargo test --all-targets --features bin
       # Test that we don't segfault or so because of the LTO.
       - name: "CLI [release]: ttfb --help"
         run: cargo run --release --features bin -- --help
