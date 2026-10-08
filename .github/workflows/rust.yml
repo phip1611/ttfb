@@ -44,14 +44,22 @@ jobs:
       - name: "CLI [release]: ttfb github.com"
         run: cargo run --release --features bin -- github.com
 
-  # The lib is already transitively build above. Here, we only verify the MSRV.
-  # The rust toolchain comes from `rust-toolchain.toml`.
+  # Checks the library with dependencies resolved from scratch, as for a new
+  # user of the crate, while build_and_test uses Cargo.lock. Cargo picks the
+  # newest versions that declare support for the MSRV, so this catches new
+  # releases that break it without declaring it.
   build_library_msrv:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Build Lib as Dependency with MSRV
-        run: cd ttfb-lib-msrv-check && cargo check --all-targets
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.85.0
+      - name: Resolve the dependencies from scratch
+        run: cargo generate-lockfile
+      - name: Check the library
+        run: cargo check --lib
 
   # Each protocol has a Cargo feature. Without it, the code paths that report
   # the protocol as unsupported are built instead.
