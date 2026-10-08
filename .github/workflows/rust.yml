@@ -28,9 +28,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ matrix.rust }}
+      # The cli job shares the cache. Its key contains the OS already.
       - uses: Swatinem/rust-cache@v2
         with:
-          key: "${{ matrix.runs-on }}-${{ matrix.rust }}"
+          shared-key: ${{ matrix.rust }}
       - name: cargo build (debug)
         run: cargo build --all-targets --features bin
       - name: cargo build (release)
@@ -94,37 +95,60 @@ jobs:
         timeout-minutes: 2
         run: cargo test -- network_tests
 
-  # Checks the format of the JSON output, as scripts depend on it.
-  json_output:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Build
-        run: cargo build --features bin
-      - name: Check the JSON output
-        timeout-minutes: 2
-        run: ./check-json-output.sh
-
-  # Runs the CLI with combinations of its options.
+  # Runs the CLI with combinations of its options and checks the format of
+  # its JSON output, as scripts depend on it. Both use the OS's network stack
+  # and certificate store, so check every OS.
   cli:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: macos-latest
+            ttfb: target/debug/ttfb
+          - runs-on: ubuntu-latest
+            ttfb: target/debug/ttfb
+          - runs-on: windows-latest
+            ttfb: target/debug/ttfb.exe
+    runs-on: ${{ matrix.runs-on }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
+      # The image has WSL as well, whose bash would run the checks in a Linux
+      # VM. Ensure that bash is Git Bash and that it runs the native ttfb.exe.
+      - name: Check that bash runs natively on Windows
+        if: runner.os == 'Windows'
+        run: |
+          echo "bash: $(command -v bash), $(uname -s)"
+          case $(uname -s) in
+              MINGW* | MSYS*) ;;
+              *) echo "bash isn't Git Bash" >&2; exit 1 ;;
+          esac
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: stable
+          save-if: false
       - name: Build
         run: cargo build --features bin
+      - name: Check that ttfb is a native Windows executable
+        if: runner.os == 'Windows'
+        run: |
+          # Every PE executable starts with "MZ".
+          if [ "$(head -c 2 '${{ matrix.ttfb }}')" != MZ ]; then
+              echo "${{ matrix.ttfb }} isn't a PE executable" >&2
+              exit 1
+          fi
       - name: Check the CLI
         timeout-minutes: 5
-        run: ./check-cli.sh
+        run: ./check-cli.sh '${{ matrix.ttfb }}'
+      - name: Check the JSON output
+        timeout-minutes: 2
+        run: ./check-json-output.sh '${{ matrix.ttfb }}'
 
   style_checks:
     runs-on: ubuntu-latest
