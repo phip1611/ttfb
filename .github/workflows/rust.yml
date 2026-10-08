@@ -14,7 +14,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build_binary:
+  build_and_test:
     strategy:
       fail-fast: false
       matrix:
