@@ -14,7 +14,7 @@ use crate::{HttpProtocol, TtfbError, TtfbOutcome, http11, tls};
 use rustls::ClientConfig;
 use std::fmt::{self, Display, Formatter};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Which HTTP protocol a [`TtfbClient`] measures.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -172,15 +172,25 @@ impl TtfbClient {
         if target.url.scheme() != "https" {
             return self.measure_http11(target, deadline);
         }
-        self.measure_http3(target, deadline)
+        let begin = Instant::now();
+        let mut last_attempt_begin = begin;
+        let outcome = self
+            .measure_http3(target, deadline)
             .or_else(|error| match error {
-                TtfbError::UnsupportedHttpProtocol(_) => self.measure_http2(target, deadline),
+                TtfbError::UnsupportedHttpProtocol(_) => {
+                    last_attempt_begin = Instant::now();
+                    self.measure_http2(target, deadline)
+                }
                 error => Err(error),
             })
             .or_else(|error| match error {
-                TtfbError::UnsupportedHttpProtocol(_) => self.measure_http11(target, deadline),
+                TtfbError::UnsupportedHttpProtocol(_) => {
+                    last_attempt_begin = Instant::now();
+                    self.measure_http11(target, deadline)
+                }
                 error => Err(error),
-            })
+            })?;
+        Ok(outcome.with_protocol_probe_duration(last_attempt_begin.duration_since(begin)))
     }
 
     /// Checks that the options are valid.
@@ -459,6 +469,12 @@ mod network_tests {
             assert_eq!(
                 outcome.protocol_selection(),
                 ProtocolSelection::Auto,
+                "{url}"
+            );
+            // Only protocols below HTTP/3 were preceded by a failed attempt.
+            assert_eq!(
+                outcome.protocol_probe_duration().is_zero(),
+                expected == HttpProtocol::Http3,
                 "{url}"
             );
         }

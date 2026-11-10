@@ -6,6 +6,11 @@ only change something for the binary.
 
 # UNRELEASED
 
+## ttfb lib
+
+- Added `TtfbOutcome::protocol_probe_duration()`: the time that the automatic
+  protocol selection spent on unavailable protocols, which no step includes.
+
 # v2.0.0
 
 This is the biggest release since v1.0.0. `ttfb` now supports HTTP/2 and

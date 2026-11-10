@@ -144,6 +144,8 @@ pub struct TtfbOutcome {
     protocol: HttpProtocol,
     /// How the protocol was selected.
     protocol_selection: ProtocolSelection,
+    /// The time spent on unavailable protocols before the measurement.
+    protocol_probe_duration: Duration,
     /// The head of the final response.
     response: ResponseHead,
 }
@@ -158,6 +160,7 @@ impl Hash for TtfbOutcome {
         self.timings.hash(state);
         self.protocol.hash(state);
         self.protocol_selection.hash(state);
+        self.protocol_probe_duration.hash(state);
         self.response.status.hash(state);
     }
 }
@@ -178,6 +181,7 @@ impl TtfbOutcome {
             timings,
             protocol,
             protocol_selection: ProtocolSelection::Only(protocol),
+            protocol_probe_duration: Duration::ZERO,
             response,
         }
     }
@@ -279,6 +283,22 @@ impl TtfbOutcome {
     /// Records how the protocol was selected, which only the client knows.
     pub(crate) const fn with_protocol_selection(mut self, selection: ProtocolSelection) -> Self {
         self.protocol_selection = selection;
+        self
+    }
+
+    /// Returns the time that the automatic protocol selection spent on
+    /// unavailable protocols before the measured protocol started. It is not
+    /// part of any step duration. It is zero if the first attempted protocol
+    /// was available or the protocol was selected explicitly.
+    #[must_use]
+    pub const fn protocol_probe_duration(&self) -> Duration {
+        self.protocol_probe_duration
+    }
+
+    /// Records the time spent on unavailable protocols, which only the client
+    /// knows.
+    pub(crate) const fn with_protocol_probe_duration(mut self, duration: Duration) -> Self {
+        self.protocol_probe_duration = duration;
         self
     }
 }
