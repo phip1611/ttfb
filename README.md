@@ -33,8 +33,10 @@ Example: `$ ttfb -k https://expired.badssl.com`
 
 By default, the CLI tries HTTP/3, then HTTP/2, and finally HTTP/1.1. For HTTPS
 servers without HTTP/3, the HTTP/3 attempt usually waits for its timeout of
-1 s, which prolongs the run but not the measured timings. Use `--http1.1`,
-`--http2`, or `--http3` to require a protocol.
+1 s, which prolongs the run but not the measured timings. The output reports
+this time as `Protocol Probe`, and the JSON output as
+`first_response.protocol_probe_ms`. Use `--http1.1`, `--http2`, or `--http3`
+to require a protocol.
 
 For hosts with IPv4 and IPv6 addresses, the CLI connects via IPv4. Use
 `-4/--ipv4` or `-6/--ipv6` to require an IP version, like in `curl`. A
@@ -99,6 +101,7 @@ If you installed the CLI and invoke it like `$ ttfb https://phip1611.de`, the ou
 TTFB for https://phip1611.de (by ttfb@v2.0.0)
 Address       : 85.13.155.159:443
 Protocol      : HTTP/2 (selected automatically)
+Protocol Probe: 1000.7 ms on unavailable protocols, not part of the timings
 Status        : 200 OK
 PROPERTY        REL TIME (ms)   ABS TIME (ms)
 DNS Lookup    :           1.1             1.1  (probably cached)
@@ -131,6 +134,7 @@ $ ttfb --repeat 2s https://phip1611.de
 TTFB for https://phip1611.de (by ttfb@v2.0.0)
 Address       : 85.13.155.159:443
 Protocol      : HTTP/2 (selected automatically)
+Protocol Probe: 1000.7 ms on unavailable protocols, not part of the timings
 Status        : 200 OK
 Measurements  : 19
 PROPERTY             MIN (ms)     MEDIAN (ms)       MEAN (ms)        MAX (ms)

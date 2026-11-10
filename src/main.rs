@@ -280,6 +280,14 @@ fn print_title(ttfb: &TtfbOutcome) {
     let address = SocketAddr::new(ttfb.ip_addr(), ttfb.port());
     println!("{:<14}: {address}", "Address");
     println!("{:<14}: {}{selection}", "Protocol", ttfb.protocol());
+    let probe_duration = ttfb.protocol_probe_duration();
+    if !probe_duration.is_zero() {
+        println!(
+            "{:<14}: {} ms on unavailable protocols, not part of the timings",
+            "Protocol Probe",
+            format_ms(probe_duration.as_secs_f64() * 1000.0)
+        );
+    }
     println!("{:<14}: {}", "Status", ttfb.status());
 }
 
@@ -647,6 +655,10 @@ mod json {
         /// Whether the protocol was selected automatically ("auto") or
         /// explicitly ("explicit").
         protocol_selection: &'static str,
+        /// The time spent on unavailable protocols before the measurement.
+        /// It is not part of the statistics.
+        #[serde(serialize_with = "serialize_ms")]
+        protocol_probe_ms: f64,
         status: u16,
         /// The values of each header in the order in which they were received.
         /// Header names are in lowercase.
@@ -671,6 +683,7 @@ mod json {
                     ProtocolSelection::Auto => "auto",
                     ProtocolSelection::Only(_) => "explicit",
                 },
+                protocol_probe_ms: ttfb.protocol_probe_duration().as_secs_f64() * 1000.0,
                 status: ttfb.status().as_u16(),
                 headers,
             }
