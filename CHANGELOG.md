@@ -11,6 +11,12 @@ only change something for the binary.
 - Added `TtfbOutcome::protocol_probe_duration()`: the time that the automatic
   protocol selection spent on unavailable protocols, which no step includes.
 
+## ttfb binary
+
+- The output shows the time spent on unavailable protocols as `Protocol Probe`,
+  and the JSON output as `first_response.protocol_probe_ms`. This explains why
+  a run against a server without HTTP/3 takes about 1 s longer than its timings.
+
 # v2.0.0
 
 This is the biggest release since v1.0.0. `ttfb` now supports HTTP/2 and

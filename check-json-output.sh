@@ -45,6 +45,7 @@ check '
     and .measurements_num == 1
     and .first_response.status == 200
     and .first_response.protocol_selection == "auto"
+    and .first_response.protocol_probe_ms > 0
     and (.first_response.headers["content-type"] | length) >= 1
     and .statistics_ms.ttfb.relative.median > 0
     and .statistics_ms.ttfb.absolute.median > .statistics_ms.ttfb.relative.median
@@ -64,6 +65,7 @@ check '
     and (.statistics_ms | has("tls_handshake") | not)
     and .statistics_ms.tcp_connect.relative.median > 0
     and .first_response.protocol_selection == "explicit"
+    and .first_response.protocol_probe_ms == 0
     and .options.protocol == "HTTP/1.1"
 ' --json --http1.1 http://1.1.1.1
 
